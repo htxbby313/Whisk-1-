@@ -1,0 +1,8 @@
+{
+  "name": "Whisk",
+  "description": "Your personal travel planner for creating custom, expert-backed itineraries in seconds. Discover unique recommendations and organize your perfect trip with Whisk.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

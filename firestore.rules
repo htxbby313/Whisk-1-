@@ -1,0 +1,329 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net - Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Reusable Global Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidOptionalString(data, key, maxLen) {
+      return !(key in data) || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    function isValidBoundedList(data, key, maxItems) {
+      return !(key in data) || (data[key] is list && data[key].size() <= maxItems);
+    }
+
+    // --- Entity Validation Blueprints ---
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'membershipTier', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'photoURL', 'membershipTier', 'createdAt', 'updatedAt'])
+        && data.uid is string && data.uid == userId && data.uid == request.auth.uid && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100
+        && isValidOptionalString(data, 'photoURL', 500)
+        && data.membershipTier is string && data.membershipTier.size() <= 30
+        && data.membershipTier in ['Wanderer', 'Explorer', 'Cartographer']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isLegacyUserMigration(userId) {
+      return !isValidUserProfile(existing(), userId)
+        && isValidUserProfile(incoming(), userId)
+        && (!('uid' in existing()) || incoming().uid == existing().uid)
+        && (
+          (('createdAt' in existing()) && existing().createdAt is timestamp && incoming().createdAt == existing().createdAt)
+          || ((!('createdAt' in existing()) || !(existing().createdAt is timestamp)) && incoming().createdAt == request.time)
+        )
+        && (
+          (('membershipTier' in existing()) && existing().membershipTier in ['Wanderer', 'Explorer', 'Cartographer'] && incoming().membershipTier == existing().membershipTier)
+          || ((!('membershipTier' in existing()) || !(existing().membershipTier in ['Wanderer', 'Explorer', 'Cartographer'])) && incoming().membershipTier == 'Wanderer')
+        )
+        && incoming().updatedAt == request.time;
+    }
+
+    function isValidUserPrivateInfo(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'updatedAt'])
+        && data.uid is string && data.uid == userId && data.uid == request.auth.uid && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSavedPlace(data, userId) {
+      return data.keys().hasAll(['ownerId', 'name', 'type', 'destination', 'description', 'createdAt'])
+        && data.keys().hasOnly(['ownerId', 'name', 'type', 'destination', 'description', 'price', 'availability', 'affiliateUrl', 'mapsUri', 'createdAt'])
+        && data.ownerId is string && data.ownerId == userId && data.ownerId == request.auth.uid && isValidId(data.ownerId)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 200
+        && data.type is string && data.type.size() <= 30 && data.type in ['hotel', 'tour', 'restaurant', 'flight', 'place']
+        && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 150
+        && data.description is string && data.description.size() <= 1000
+        && isValidOptionalString(data, 'price', 80)
+        && isValidOptionalString(data, 'availability', 120)
+        && isValidOptionalString(data, 'affiliateUrl', 500)
+        && isValidOptionalString(data, 'mapsUri', 500)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidChatSession(data, userId) {
+      return data.keys().hasAll(['ownerId', 'title', 'mode', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'title', 'mode', 'createdAt', 'updatedAt'])
+        && data.ownerId is string && data.ownerId == userId && data.ownerId == request.auth.uid && isValidId(data.ownerId)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 150
+        && data.mode is string && data.mode.size() <= 20 && data.mode in ['standard', 'maps', 'fast', 'thinking', 'complex']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidChatMessage(data, userId) {
+      return data.keys().hasAll(['ownerId', 'role', 'text', 'createdAt'])
+        && data.keys().hasOnly(['ownerId', 'role', 'text', 'mode', 'model', 'groundingSources', 'createdAt'])
+        && data.ownerId is string && data.ownerId == userId && data.ownerId == request.auth.uid && isValidId(data.ownerId)
+        && data.role is string && data.role.size() <= 10 && data.role in ['user', 'ai']
+        && data.text is string && data.text.size() >= 1 && data.text.size() <= 20000
+        && (!( 'mode' in data ) || (data.mode is string && data.mode.size() <= 20 && data.mode in ['standard', 'maps', 'fast', 'thinking', 'complex']))
+        && isValidOptionalString(data, 'model', 80)
+        && isValidBoundedList(data, 'groundingSources', 25)
+        && (!( 'groundingSources' in data ) || data.groundingSources.size() == 0 || data.groundingSources[0] is map)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidItinerary(data) {
+      return data.keys().hasAll(['ownerId', 'title', 'destination', 'duration', 'summary', 'days', 'recommendations', 'unlocked', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'title', 'destination', 'duration', 'summary', 'budget', 'pace', 'interests', 'accessibility', 'days', 'recommendations', 'groundingSources', 'mapsOverview', 'blogPost', 'unlocked', 'overallRating', 'createdAt', 'updatedAt'])
+        && data.ownerId is string && data.ownerId == request.auth.uid && isValidId(data.ownerId)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 150
+        && data.duration is string && data.duration.size() >= 1 && data.duration.size() <= 50
+        && data.summary is string && data.summary.size() <= 3000
+        && isValidOptionalString(data, 'budget', 50)
+        && isValidOptionalString(data, 'pace', 50)
+        && isValidOptionalString(data, 'mapsOverview', 5000)
+        && isValidBoundedList(data, 'interests', 15)
+        && (!( 'interests' in data ) || data.interests.size() == 0 || data.interests[0] is string)
+        && isValidBoundedList(data, 'accessibility', 15)
+        && (!( 'accessibility' in data ) || data.accessibility.size() == 0 || data.accessibility[0] is string)
+        && data.days is list && data.days.size() >= 1 && data.days.size() <= 30 && data.days[0] is map
+        && data.recommendations is list && data.recommendations.size() <= 30
+        && (data.recommendations.size() == 0 || data.recommendations[0] is map)
+        && isValidBoundedList(data, 'groundingSources', 40)
+        && (!( 'groundingSources' in data ) || data.groundingSources.size() == 0 || data.groundingSources[0] is map)
+        && (!( 'blogPost' in data ) || data.blogPost is map)
+        && data.unlocked is bool
+        && (!( 'overallRating' in data ) || (data.overallRating is number && data.overallRating >= 0 && data.overallRating <= 5))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPublishedGuide(data) {
+      return data.keys().hasAll(['ownerId', 'itineraryId', 'title', 'metaDescription', 'content', 'destination', 'imageUrl', 'keywords', 'isPublished', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'itineraryId', 'slug', 'title', 'seoTitle', 'metaDescription', 'geoSummary', 'content', 'destination', 'imageUrl', 'keywords', 'neighborhoods', 'faqs', 'geoCoordinates', 'isPublished', 'createdAt', 'updatedAt'])
+        && data.ownerId is string && data.ownerId == request.auth.uid && isValidId(data.ownerId)
+        && data.itineraryId is string && isValidId(data.itineraryId)
+        && isValidOptionalString(data, 'slug', 180)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && isValidOptionalString(data, 'seoTitle', 120)
+        && data.metaDescription is string && data.metaDescription.size() >= 1 && data.metaDescription.size() <= 320
+        && isValidOptionalString(data, 'geoSummary', 1200)
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 20000
+        && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 150
+        && data.imageUrl is string && data.imageUrl.size() >= 1 && data.imageUrl.size() <= 500
+        && data.keywords is list && data.keywords.size() <= 20
+        && (data.keywords.size() == 0 || data.keywords[0] is string)
+        && isValidBoundedList(data, 'neighborhoods', 15)
+        && (!( 'neighborhoods' in data ) || data.neighborhoods.size() == 0 || data.neighborhoods[0] is string)
+        && isValidBoundedList(data, 'faqs', 10)
+        && (!( 'faqs' in data ) || data.faqs.size() == 0 || data.faqs[0] is map)
+        && (!( 'geoCoordinates' in data ) || data.geoCoordinates is map)
+        && data.isPublished is bool && data.isPublished == true
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // --- Collection Rules ---
+
+    // User Profile (Public-safe metadata, owner-only)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().updatedAt == request.time
+        && (
+          (
+            isValidUserProfile(existing(), userId)
+            && incoming().uid == existing().uid
+            && incoming().createdAt == existing().createdAt
+            && (
+              incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt'])
+              || incoming().diff(existing()).affectedKeys().hasOnly(['membershipTier', 'updatedAt'])
+              || incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'membershipTier', 'updatedAt'])
+            )
+          )
+          || isLegacyUserMigration(userId)
+        );
+      allow delete: if isValidId(userId) && isOwner(userId);
+
+      // Isolated Private PII
+      match /private/{docId} {
+        allow get: if isValidId(userId) && isValidId(docId) && docId == 'info' && isOwner(userId);
+        allow list: if false;
+        allow create: if isValidId(userId)
+          && isValidId(docId)
+          && docId == 'info'
+          && isOwner(userId)
+          && isValidUserPrivateInfo(incoming(), userId)
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(docId)
+          && docId == 'info'
+          && isOwner(userId)
+          && isValidUserPrivateInfo(incoming(), userId)
+          && incoming().uid == existing().uid
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt'])
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow delete: if isValidId(userId) && isValidId(docId) && isOwner(userId);
+      }
+
+      // Saved / Favorite Places Subcollection
+      match /savedPlaces/{placeId} {
+        allow get: if isValidId(userId) && isValidId(placeId) && isOwner(userId);
+        allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(placeId)
+          && isOwner(userId)
+          && isValidSavedPlace(incoming(), userId)
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(placeId) && isOwner(userId);
+      }
+
+      // Chat Sessions Subcollection
+      match /chatSessions/{sessionId} {
+        allow get: if isValidId(userId) && isValidId(sessionId) && isOwner(userId);
+        allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(sessionId)
+          && isOwner(userId)
+          && isValidChatSession(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(sessionId)
+          && isOwner(userId)
+          && isValidChatSession(incoming(), userId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['mode', 'updatedAt'])
+            || incoming().diff(existing()).affectedKeys().hasOnly(['title', 'updatedAt'])
+            || incoming().diff(existing()).affectedKeys().hasOnly(['title', 'mode', 'updatedAt'])
+          )
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow delete: if isValidId(userId) && isValidId(sessionId) && isOwner(userId);
+
+        // Chat Messages Subcollection
+        match /messages/{messageId} {
+          allow get: if isValidId(userId) && isValidId(sessionId) && isValidId(messageId) && isOwner(userId);
+          allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+          allow create: if isValidId(userId)
+            && isValidId(sessionId)
+            && isValidId(messageId)
+            && isOwner(userId)
+            && isValidChatMessage(incoming(), userId)
+            && incoming().createdAt == request.time
+            && exists(/databases/$(database)/documents/users/$(userId))
+            && exists(/databases/$(database)/documents/users/$(userId)/chatSessions/$(sessionId));
+          allow update: if false;
+          allow delete: if isValidId(userId) && isValidId(sessionId) && isValidId(messageId) && isOwner(userId);
+        }
+      }
+    }
+
+    // Saved Travel Itineraries Collection
+    match /itineraries/{itineraryId} {
+      allow get: if isValidId(itineraryId) && isVerifiedUser() && (resource == null || existing().ownerId == request.auth.uid);
+      allow list: if isVerifiedUser() && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(itineraryId)
+        && isVerifiedUser()
+        && isValidItinerary(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      allow update: if isValidId(itineraryId)
+        && isVerifiedUser()
+        && isValidItinerary(incoming())
+        && existing().ownerId == request.auth.uid
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['unlocked', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['blogPost', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['overallRating', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['days', 'recommendations', 'groundingSources', 'summary', 'updatedAt'])
+        );
+      allow delete: if isValidId(itineraryId) && isVerifiedUser() && existing().ownerId == request.auth.uid;
+    }
+
+    // Public SEO & GEO Field Guides Collection (Non-PII organic discovery catalog)
+    match /publishedGuides/{guideId} {
+      allow get: if isValidId(guideId) && resource.data.isPublished == true;
+      allow list: if resource.data.isPublished == true;
+      allow create: if isValidId(guideId)
+        && isVerifiedUser()
+        && isValidPublishedGuide(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      allow update: if isValidId(guideId)
+        && isVerifiedUser()
+        && isValidPublishedGuide(incoming())
+        && existing().ownerId == request.auth.uid
+        && incoming().ownerId == existing().ownerId
+        && incoming().itineraryId == existing().itineraryId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'seoTitle', 'slug', 'metaDescription', 'geoSummary', 'content', 'keywords', 'neighborhoods', 'faqs', 'geoCoordinates', 'updatedAt']);
+      allow delete: if isValidId(guideId) && isVerifiedUser() && existing().ownerId == request.auth.uid;
+    }
+  }
+}

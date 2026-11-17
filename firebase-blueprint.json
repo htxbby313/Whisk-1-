@@ -1,0 +1,442 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public-safe user profile and membership settings for a Whisk traveler.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID matching the document ID.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User's display name.",
+          "maxLength": 100
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Profile avatar URL.",
+          "maxLength": 500
+        },
+        "membershipTier": {
+          "type": "string",
+          "description": "Whisk membership tier.",
+          "enum": ["Wanderer", "Explorer", "Cartographer"],
+          "maxLength": 30
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of account creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last profile update."
+        }
+      },
+      "required": ["uid", "displayName", "membershipTier", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Isolated PII record for a user (email address).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID matching the parent user document.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "User email address.",
+          "maxLength": 200
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": ["uid", "email", "updatedAt"]
+    },
+    "TripItinerary": {
+      "title": "TripItinerary",
+      "description": "A personalized multi-day travel itinerary generated and saved by a user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the itinerary owner.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Itinerary title.",
+          "maxLength": 200
+        },
+        "destination": {
+          "type": "string",
+          "description": "Primary trip destination.",
+          "maxLength": 150
+        },
+        "duration": {
+          "type": "string",
+          "description": "Trip duration label.",
+          "maxLength": 50
+        },
+        "summary": {
+          "type": "string",
+          "description": "Trip overview written in the Travel Bestie voice.",
+          "maxLength": 3000
+        },
+        "budget": {
+          "type": "string",
+          "description": "Selected budget tier.",
+          "maxLength": 50
+        },
+        "pace": {
+          "type": "string",
+          "description": "Selected travel pace.",
+          "maxLength": 50
+        },
+        "interests": {
+          "type": "array",
+          "description": "Selected travel interests (max 15)."
+        },
+        "accessibility": {
+          "type": "array",
+          "description": "Selected accessibility needs (max 15)."
+        },
+        "days": {
+          "type": "array",
+          "description": "Structured day plans (max 30)."
+        },
+        "recommendations": {
+          "type": "array",
+          "description": "Grounded hotel, restaurant, tour, and flight recommendations (max 30)."
+        },
+        "groundingSources": {
+          "type": "array",
+          "description": "Google Search and Google Maps grounding citations (max 40)."
+        },
+        "mapsOverview": {
+          "type": "string",
+          "description": "Google Maps grounded local overview for the destination.",
+          "maxLength": 5000
+        },
+        "blogPost": {
+          "type": "object",
+          "description": "Optional generated field guide article attached to this trip."
+        },
+        "unlocked": {
+          "type": "boolean",
+          "description": "Whether all itinerary days are unlocked."
+        },
+        "overallRating": {
+          "type": "number",
+          "description": "Optional user rating from 0 to 5."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "ownerId",
+        "title",
+        "destination",
+        "duration",
+        "summary",
+        "days",
+        "recommendations",
+        "unlocked",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SavedPlace": {
+      "title": "SavedPlace",
+      "description": "A bookmarked hotel, restaurant, tour, or place saved by a user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owner.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the place.",
+          "maxLength": 200
+        },
+        "type": {
+          "type": "string",
+          "description": "Place category.",
+          "enum": ["hotel", "tour", "restaurant", "flight", "place"],
+          "maxLength": 30
+        },
+        "destination": {
+          "type": "string",
+          "description": "Destination city or region.",
+          "maxLength": 150
+        },
+        "description": {
+          "type": "string",
+          "description": "Short summary of why this spot is special.",
+          "maxLength": 1000
+        },
+        "price": {
+          "type": "string",
+          "description": "Estimated price string.",
+          "maxLength": 80
+        },
+        "availability": {
+          "type": "string",
+          "description": "Availability status.",
+          "maxLength": 120
+        },
+        "affiliateUrl": {
+          "type": "string",
+          "description": "Booking or info link.",
+          "maxLength": 500
+        },
+        "mapsUri": {
+          "type": "string",
+          "description": "Google Maps URI if available.",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of bookmark."
+        }
+      },
+      "required": ["ownerId", "name", "type", "destination", "description", "createdAt"]
+    },
+    "ChatSession": {
+      "title": "ChatSession",
+      "description": "A multi-turn Travel Bestie conversation session.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the chat owner.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Short title for the conversation.",
+          "maxLength": 150
+        },
+        "mode": {
+          "type": "string",
+          "description": "Active assistant mode.",
+          "enum": ["standard", "maps", "fast", "thinking"],
+          "maxLength": 20
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when session started."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest message."
+        }
+      },
+      "required": ["ownerId", "title", "mode", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Individual message inside a Travel Bestie chat session subcollection.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the chat owner.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "role": {
+          "type": "string",
+          "description": "Sender role.",
+          "enum": ["user", "ai"],
+          "maxLength": 10
+        },
+        "text": {
+          "type": "string",
+          "description": "Message body.",
+          "maxLength": 20000
+        },
+        "mode": {
+          "type": "string",
+          "description": "Assistant mode used.",
+          "enum": ["standard", "maps", "fast", "thinking"],
+          "maxLength": 20
+        },
+        "model": {
+          "type": "string",
+          "description": "Model name used to produce AI response.",
+          "maxLength": 80
+        },
+        "groundingSources": {
+          "type": "array",
+          "description": "Optional Google Maps or Search grounding citations (max 25)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of message creation."
+        }
+      },
+      "required": ["ownerId", "role", "text", "createdAt"]
+    },
+    "PublishedGuide": {
+      "title": "PublishedGuide",
+      "description": "Publicly discoverable SEO and GEO optimized travel field guide generated from an itinerary for organic marketing.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the guide creator.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "itineraryId": {
+          "type": "string",
+          "description": "Source itinerary document ID.",
+          "maxLength": 128
+        },
+        "slug": {
+          "type": "string",
+          "description": "SEO-friendly URL slug.",
+          "maxLength": 180
+        },
+        "title": {
+          "type": "string",
+          "description": "Field guide headline.",
+          "maxLength": 200
+        },
+        "seoTitle": {
+          "type": "string",
+          "description": "Search-engine optimized title tag.",
+          "maxLength": 120
+        },
+        "metaDescription": {
+          "type": "string",
+          "description": "Search snippet meta description.",
+          "maxLength": 320
+        },
+        "geoSummary": {
+          "type": "string",
+          "description": "Concise generative-engine direct answer summary.",
+          "maxLength": 1200
+        },
+        "content": {
+          "type": "string",
+          "description": "Structured Markdown guide body.",
+          "maxLength": 20000
+        },
+        "destination": {
+          "type": "string",
+          "description": "Target city or region.",
+          "maxLength": 150
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Public hero image asset path.",
+          "maxLength": 500
+        },
+        "keywords": {
+          "type": "array",
+          "description": "Target SEO keywords (max 20)."
+        },
+        "neighborhoods": {
+          "type": "array",
+          "description": "Named local districts and landmarks (max 15)."
+        },
+        "faqs": {
+          "type": "array",
+          "description": "Structured Q&A pairs for FAQPage JSON-LD (max 10)."
+        },
+        "geoCoordinates": {
+          "type": "object",
+          "description": "Latitude and longitude center for Place schema."
+        },
+        "isPublished": {
+          "type": "boolean",
+          "description": "Must be true for public catalog listing."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of publication."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "ownerId",
+        "itineraryId",
+        "title",
+        "metaDescription",
+        "content",
+        "destination",
+        "imageUrl",
+        "keywords",
+        "isPublished",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile document keyed by Firebase Auth UID."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Isolated private user PII (such as email) accessible only by the owner."
+    },
+    "/users/{userId}/savedPlaces/{placeId}": {
+      "schema": { "$ref": "#/entities/SavedPlace" },
+      "description": "Subcollection of favorite places and recommendations saved by the user."
+    },
+    "/users/{userId}/chatSessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/ChatSession" },
+      "description": "Subcollection of user chat threads with Whisk Travel Bestie."
+    },
+    "/users/{userId}/chatSessions/{sessionId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Subcollection of individual messages inside a chat session."
+    },
+    "/itineraries/{itineraryId}": {
+      "schema": { "$ref": "#/entities/TripItinerary" },
+      "description": "User-owned saved travel itineraries queried by ownerId."
+    },
+    "/publishedGuides/{guideId}": {
+      "schema": { "$ref": "#/entities/PublishedGuide" },
+      "description": "Public SEO/GEO field guides published from generated itineraries for organic search discovery."
+    }
+  }
+}
