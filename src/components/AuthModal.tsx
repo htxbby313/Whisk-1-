@@ -12,11 +12,13 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { LegalDocId } from '../legal/catalog';
 import { isValidUsernameFormat, normalizeUsername } from '../services/firestoreService';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenLegalDoc: (docId: LegalDocId) => void;
   title?: string;
   subtitle?: string;
 }
@@ -54,6 +56,7 @@ const AppleMark = () => (
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
+  onOpenLegalDoc,
   title,
   subtitle,
 }) => {
@@ -79,6 +82,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [recoveryEmail, setRecoveryEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [showPassword, setShowPassword] = React.useState(false);
+
+  const [agreedToLegal, setAgreedToLegal] = React.useState(false);
+  const [marketingOptIn, setMarketingOptIn] = React.useState(false);
 
   const [localError, setLocalError] = React.useState<string | null>(null);
   const [resetSentTo, setResetSentTo] = React.useState<string | null>(null);
@@ -118,13 +124,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleGoogleClick = async () => {
     resetMessages();
-    const ok = await signInWithGoogle();
+    if (mode === 'signup' && !agreedToLegal) {
+      setLocalError(
+        'Please agree to the Terms of Service, Privacy Policy, and legal policies below before creating your profile.'
+      );
+      return;
+    }
+    const ok = await signInWithGoogle(
+      mode === 'signup' ? { acceptedLegal: true, marketingOptIn } : undefined
+    );
     if (ok) onClose();
   };
 
   const handleAppleClick = async () => {
     resetMessages();
-    const ok = await signInWithApple();
+    if (mode === 'signup' && !agreedToLegal) {
+      setLocalError(
+        'Please agree to the Terms of Service, Privacy Policy, and legal policies below before creating your profile.'
+      );
+      return;
+    }
+    const ok = await signInWithApple(
+      mode === 'signup' ? { acceptedLegal: true, marketingOptIn } : undefined
+    );
     if (ok) onClose();
   };
 
@@ -140,6 +162,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
+    if (mode === 'signup' && !agreedToLegal) {
+      setLocalError(
+        'Please agree to the Terms of Service, Privacy Policy, Cookie Policy, UGC Policy, Refund Policy, and Travel Disclaimer before creating your profile.'
+      );
+      return;
+    }
+
     if (method === 'email') {
       if (mode === 'signin') {
         const ok = await signInWithEmail(email, password);
@@ -150,13 +179,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           password,
           displayName,
           username: usernameInput.trim() || undefined,
+          acceptedLegal: agreedToLegal,
+          marketingOptIn,
         });
         if (ok) onClose();
       }
       return;
     }
 
-    // Username method
     if (mode === 'signin') {
       const ok = await signInWithUsername(usernameInput, password);
       if (ok) onClose();
@@ -166,6 +196,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         password,
         email: recoveryEmail.trim() || undefined,
         displayName: displayName.trim() || undefined,
+        acceptedLegal: agreedToLegal,
+        marketingOptIn,
       });
       if (ok) onClose();
     }
@@ -516,6 +548,85 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
+          {mode === 'signup' && (
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2.5">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agreedToLegal}
+                  onChange={(e) => {
+                    setAgreedToLegal(e.target.checked);
+                    if (localError) setLocalError(null);
+                  }}
+                  className="mt-0.5 w-4 h-4 rounded accent-[var(--whisk-terracotta)] shrink-0 cursor-pointer"
+                />
+                <span className="text-[11px] sm:text-xs text-slate-700 leading-relaxed font-medium">
+                  I agree to the{' '}
+                  <button
+                    type="button"
+                    onClick={() => onOpenLegalDoc('terms')}
+                    className="text-[var(--whisk-terracotta)] font-bold underline cursor-pointer"
+                  >
+                    Terms of Service
+                  </button>
+                  ,{' '}
+                  <button
+                    type="button"
+                    onClick={() => onOpenLegalDoc('privacy')}
+                    className="text-[var(--whisk-terracotta)] font-bold underline cursor-pointer"
+                  >
+                    Privacy Policy
+                  </button>
+                  ,{' '}
+                  <button
+                    type="button"
+                    onClick={() => onOpenLegalDoc('cookies')}
+                    className="text-[var(--whisk-terracotta)] font-bold underline cursor-pointer"
+                  >
+                    Cookie Policy
+                  </button>
+                  ,{' '}
+                  <button
+                    type="button"
+                    onClick={() => onOpenLegalDoc('ugc')}
+                    className="text-[var(--whisk-terracotta)] font-bold underline cursor-pointer"
+                  >
+                    UGC Policy
+                  </button>
+                  ,{' '}
+                  <button
+                    type="button"
+                    onClick={() => onOpenLegalDoc('refunds')}
+                    className="text-[var(--whisk-terracotta)] font-bold underline cursor-pointer"
+                  >
+                    Refund Policy
+                  </button>
+                  , and{' '}
+                  <button
+                    type="button"
+                    onClick={() => onOpenLegalDoc('disclaimer')}
+                    className="text-[var(--whisk-terracotta)] font-bold underline cursor-pointer"
+                  >
+                    Travel Disclaimer
+                  </button>
+                  .
+                </span>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer pt-2 border-t border-slate-200/80">
+                <input
+                  type="checkbox"
+                  checked={marketingOptIn}
+                  onChange={(e) => setMarketingOptIn(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded accent-[var(--whisk-terracotta)] shrink-0 cursor-pointer"
+                />
+                <span className="text-[11px] text-slate-500 leading-relaxed">
+                  Optional: Email me travel inspiration and Whisk updates (unsubscribe anytime).
+                </span>
+              </label>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={signingIn}
@@ -530,8 +641,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               ? signingIn
                 ? 'Creating Profile...'
                 : method === 'username'
-                ? 'Create Account with Username'
-                : 'Create Account with Email'
+                ? 'Agree & Create Username Profile'
+                : 'Agree & Create Email Profile'
               : signingIn
               ? 'Signing In...'
               : method === 'username'
@@ -547,6 +658,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             >
               Back to Sign In
             </button>
+          )}
+
+          {mode === 'signin' && (
+            <p className="text-[11px] text-center text-slate-400 leading-relaxed pt-1">
+              New travelers will be asked to review and accept our{' '}
+              <button
+                type="button"
+                onClick={() => onOpenLegalDoc('terms')}
+                className="underline hover:text-slate-600 cursor-pointer"
+              >
+                Terms
+              </button>{' '}
+              &{' '}
+              <button
+                type="button"
+                onClick={() => onOpenLegalDoc('privacy')}
+                className="underline hover:text-slate-600 cursor-pointer"
+              >
+                Privacy Policy
+              </button>{' '}
+              upon first sign-in.
+            </p>
           )}
         </form>
       </div>

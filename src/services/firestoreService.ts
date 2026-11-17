@@ -75,9 +75,17 @@ const CANONICAL_USER_KEYS = new Set([
   'username',
   'photoURL',
   'membershipTier',
+  'legalConsentVersion',
+  'legalConsentAcceptedAt',
+  'marketingOptIn',
   'createdAt',
   'updatedAt',
 ]);
+
+export interface LegalConsentInput {
+  version: string;
+  marketingOptIn: boolean;
+}
 
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_-]{1,22}[a-z0-9]$/;
 
@@ -120,11 +128,69 @@ export async function reserveUsername(uid: string, rawUsername: string): Promise
   }
 }
 
+export async function checkUserLegalConsentStatus(user: User): Promise<{
+  hasProfile: boolean;
+  hasLegalConsent: boolean;
+  legalConsentVersion?: string;
+  membershipTier: MembershipTier;
+  username?: string;
+}> {
+  const userPath = `users/${user.uid}`;
+  const userRef = doc(db, 'users', user.uid);
+  let snap;
+  try {
+    snap = await getDoc(userRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, userPath);
+  }
+
+  if (!snap.exists()) {
+    return {
+      hasProfile: false,
+      hasLegalConsent: false,
+      membershipTier: 'Wanderer',
+    };
+  }
+
+  const data = snap.data() || {};
+  const tier: MembershipTier =
+    data.membershipTier === 'Explorer' || data.membershipTier === 'Cartographer'
+      ? data.membershipTier
+      : 'Wanderer';
+  const username =
+    typeof data.username === 'string' && USERNAME_PATTERN.test(data.username)
+      ? data.username
+      : undefined;
+  const legalConsentVersion =
+    typeof data.legalConsentVersion === 'string' && data.legalConsentVersion.trim().length > 0
+      ? data.legalConsentVersion.trim()
+      : undefined;
+  const hasLegalConsent = Boolean(
+    legalConsentVersion && data.legalConsentAcceptedAt instanceof Timestamp
+  );
+
+  return {
+    hasProfile: true,
+    hasLegalConsent,
+    legalConsentVersion,
+    membershipTier: tier,
+    username,
+  };
+}
+
 // --- User Profile & PII Isolation ---
 export async function ensureUserProfile(
   user: User,
-  overrides?: { displayName?: string; username?: string }
-): Promise<{ membershipTier: MembershipTier; username?: string }> {
+  overrides?: {
+    displayName?: string;
+    username?: string;
+    legalConsent?: LegalConsentInput;
+  }
+): Promise<{
+  membershipTier: MembershipTier;
+  username?: string;
+  legalConsentVersion?: string;
+}> {
   const userPath = `users/${user.uid}`;
   const privatePath = `users/${user.uid}/private/info`;
 
@@ -164,7 +230,21 @@ export async function ensureUserProfile(
   );
   const photoURL = user.photoURL ? safeStr(user.photoURL, 500) : undefined;
 
+  const existingConsentVersion =
+    typeof existingData.legalConsentVersion === 'string' &&
+    existingData.legalConsentVersion.trim().length > 0
+      ? safeStr(existingData.legalConsentVersion, 30)
+      : undefined;
+  const resolvedConsentVersion = overrides?.legalConsent
+    ? safeStr(overrides.legalConsent.version, 30, '2026-11-17')
+    : existingConsentVersion;
+
   if (!snap.exists()) {
+    if (!overrides?.legalConsent?.version) {
+      throw new Error(
+        'Legal terms and Privacy Policy acceptance is required before creating a Whisk profile.'
+      );
+    }
     try {
       const payload = stripUndefined({
         uid: user.uid,
@@ -172,6 +252,9 @@ export async function ensureUserProfile(
         username: resolvedUsername || undefined,
         photoURL: photoURL || undefined,
         membershipTier: 'Wanderer' as MembershipTier,
+        legalConsentVersion: safeStr(overrides.legalConsent.version, 30, '2026-11-17'),
+        legalConsentAcceptedAt: serverTimestamp(),
+        marketingOptIn: Boolean(overrides.legalConsent.marketingOptIn),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -206,6 +289,13 @@ export async function ensureUserProfile(
           displayName,
           username: resolvedUsername || undefined,
           photoURL: photoURL || undefined,
+          ...(overrides?.legalConsent
+            ? {
+                legalConsentVersion: safeStr(overrides.legalConsent.version, 30, '2026-11-17'),
+                legalConsentAcceptedAt: serverTimestamp(),
+                marketingOptIn: Boolean(overrides.legalConsent.marketingOptIn),
+              }
+            : {}),
           updatedAt: serverTimestamp(),
         });
         await updateDoc(userRef, updatePayload);
@@ -216,6 +306,22 @@ export async function ensureUserProfile(
           username: resolvedUsername || undefined,
           photoURL: photoURL || undefined,
           membershipTier: tier,
+          ...(overrides?.legalConsent
+            ? {
+                legalConsentVersion: safeStr(overrides.legalConsent.version, 30, '2026-11-17'),
+                legalConsentAcceptedAt: serverTimestamp(),
+                marketingOptIn: Boolean(overrides.legalConsent.marketingOptIn),
+              }
+            : existingConsentVersion && existingData.legalConsentAcceptedAt instanceof Timestamp
+            ? {
+                legalConsentVersion: existingConsentVersion,
+                legalConsentAcceptedAt: existingData.legalConsentAcceptedAt,
+                marketingOptIn:
+                  typeof existingData.marketingOptIn === 'boolean'
+                    ? existingData.marketingOptIn
+                    : false,
+              }
+            : {}),
           createdAt:
             existingData.createdAt instanceof Timestamp
               ? existingData.createdAt
@@ -243,7 +349,11 @@ export async function ensureUserProfile(
     }
   }
 
-  return { membershipTier: tier, username: resolvedUsername };
+  return {
+    membershipTier: tier,
+    username: resolvedUsername,
+    legalConsentVersion: resolvedConsentVersion,
+  };
 }
 
 export async function updateMembershipTier(uid: string, tier: MembershipTier): Promise<void> {

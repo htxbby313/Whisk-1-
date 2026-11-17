@@ -1,0 +1,12 @@
+Welcome, {{userName}}!
+
+We're thrilled to have you join Whisk — your curated travel-planning companion.
+
+Start planning your next itinerary here:
+{{appUrl}}
+
+Need help? Contact us at privacy@whisk.travel.
+
+— The Whisk Team
+Terms of Service: {{termsUrl}}
+Privacy Policy: {{privacyUrl}}

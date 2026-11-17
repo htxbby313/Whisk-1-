@@ -1,0 +1,12 @@
+Hello {{userName}},
+
+Thanks for signing up for Whisk! Please verify your email address to secure your profile and unlock trip syncing:
+
+{{verificationLink}}
+
+If you didn't create this account, you can safely ignore this email.
+
+— The Whisk Team
+Terms of Service: {{termsUrl}}
+Privacy Policy: {{privacyUrl}}
+Support: privacy@whisk.travel

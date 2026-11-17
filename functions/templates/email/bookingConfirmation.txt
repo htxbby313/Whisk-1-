@@ -1,0 +1,14 @@
+Booking Confirmed – {{bookingId}}
+
+Hi {{userName}},
+
+Your itinerary "{{itineraryName}}" has been verified and saved on Whisk.
+Travel Dates: {{startDate}} – {{endDate}}
+View details: {{bookingLink}}
+
+Please double-check third-party carrier, hotel, and tour confirmations directly before departure.
+
+— The Whisk Team
+Terms of Service: {{termsUrl}}
+Privacy Policy: {{privacyUrl}}
+Support: privacy@whisk.travel

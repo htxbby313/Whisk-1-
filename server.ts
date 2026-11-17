@@ -1,9 +1,11 @@
 import express from 'express';
+import fs from 'fs';
 import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import dotenv from 'dotenv';
+import { FieldValue } from 'firebase-admin/firestore';
 import { GoogleGenAI, Type, ThinkingLevel, Modality, type LiveServerMessage } from '@google/genai';
 import { requireAuth, type AuthRequest } from './src/middleware/auth.ts';
 import { adminAuth, adminDb } from './src/lib/firebase-admin.ts';
@@ -308,6 +310,166 @@ app.post('/api/auth/resolve-username', async (req, res) => {
       code: 'ADMIN_UNAVAILABLE',
     });
   }
+});
+
+// --- Public Legal Document Endpoints & Consent Audit API ---
+const LEGAL_VERSION = '2026-11-17';
+const LEGAL_EFFECTIVE_DATE = 'November 17, 2026';
+const PUBLIC_LEGAL_DOCS = [
+  { id: 'terms', title: 'Terms of Service', file: 'terms.md', publicPath: '/legal/terms', apiPath: '/api/legal/terms' },
+  { id: 'privacy', title: 'Privacy Policy', file: 'privacy.md', publicPath: '/legal/privacy', apiPath: '/api/legal/privacy' },
+  { id: 'cookies', title: 'Cookie Policy', file: 'cookies.md', publicPath: '/legal/cookies', apiPath: '/api/legal/cookies' },
+  { id: 'ugc', title: 'User-Generated Content Policy', file: 'ugc.md', publicPath: '/legal/ugc', apiPath: '/api/legal/ugc' },
+  { id: 'refunds', title: 'Refund & Cancellation Policy', file: 'refunds.md', publicPath: '/legal/refunds', apiPath: '/api/legal/refunds' },
+  { id: 'disclaimer', title: 'Disclaimer & Limitation of Liability', file: 'disclaimer.md', publicPath: '/legal/disclaimer', apiPath: '/api/legal/disclaimer' },
+] as const;
+
+function readPublicLegalMarkdown(fileName: string): string | null {
+  const candidates = [
+    path.resolve(__dirname, 'src/legal', fileName),
+    path.resolve(process.cwd(), 'src/legal', fileName),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return fs.readFileSync(candidate, 'utf-8');
+    }
+  }
+  return null;
+}
+
+app.get('/api/legal', (_req, res) => {
+  res.json({
+    version: LEGAL_VERSION,
+    effectiveDate: LEGAL_EFFECTIVE_DATE,
+    contactEmail: 'privacy@whisk.travel',
+    documents: PUBLIC_LEGAL_DOCS.map(({ id, title, publicPath, apiPath }) => ({
+      id,
+      title,
+      publicPath,
+      apiPath,
+    })),
+  });
+});
+
+app.get('/api/legal/consent', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.user!.uid;
+    const snap = await adminDb.collection('users').doc(uid).get();
+    if (!snap.exists) {
+      return res.json({
+        upToDate: false,
+        legalConsentVersion: null,
+        legalConsentAcceptedAt: null,
+        marketingOptIn: false,
+      });
+    }
+    const data = snap.data() || {};
+    const acceptedVersion =
+      typeof data.legalConsentVersion === 'string' ? data.legalConsentVersion : null;
+    const acceptedAt = data.legalConsentAcceptedAt?.toDate
+      ? data.legalConsentAcceptedAt.toDate().toISOString()
+      : null;
+
+    return res.json({
+      upToDate: Boolean(acceptedVersion && acceptedAt),
+      legalConsentVersion: acceptedVersion,
+      legalConsentAcceptedAt: acceptedAt,
+      marketingOptIn: Boolean(data.marketingOptIn),
+    });
+  } catch (err: any) {
+    console.error('Failed to fetch legal consent status:', err);
+    return res.status(503).json({
+      error: 'Legal consent lookup temporarily unavailable.',
+      code: 'ADMIN_UNAVAILABLE',
+    });
+  }
+});
+
+app.post('/api/legal/consent', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.user!.uid;
+    const body = req.body || {};
+    const version =
+      typeof body.version === 'string' && body.version.trim()
+        ? body.version.trim().slice(0, 30)
+        : LEGAL_VERSION;
+    const acceptedAll = Boolean(
+      body.acceptedAll ||
+        (body.acceptedTerms &&
+          body.acceptedPrivacy &&
+          body.acceptedCookies &&
+          body.acceptedUgc &&
+          body.acceptedRefunds &&
+          body.acceptedDisclaimer)
+    );
+
+    if (!acceptedAll) {
+      return res.status(400).json({
+        error: 'Explicit acceptance of Terms of Service, Privacy Policy, and all legal policies is required.',
+      });
+    }
+
+    const marketingOptIn = Boolean(body.marketingOptIn);
+    const nowIso = new Date().toISOString();
+
+    await adminDb
+      .collection('users')
+      .doc(uid)
+      .set(
+        {
+          legalConsentVersion: version,
+          legalConsentAcceptedAt: FieldValue.serverTimestamp(),
+          marketingOptIn,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+    return res.json({
+      recorded: true,
+      version,
+      marketingOptIn,
+      acceptedAt: nowIso,
+    });
+  } catch (err: any) {
+    console.error('Failed to record backend legal consent:', err);
+    return res.status(503).json({
+      error: 'Backend consent audit temporarily unavailable.',
+      code: 'ADMIN_UNAVAILABLE',
+    });
+  }
+});
+
+app.get('/api/legal/:docId', (req, res) => {
+  const docId = String(req.params.docId || '').trim().toLowerCase();
+  const entry = PUBLIC_LEGAL_DOCS.find((d) => d.id === docId);
+  if (!entry) {
+    return res.status(404).json({ error: 'Legal document not found.' });
+  }
+
+  const markdown = readPublicLegalMarkdown(entry.file);
+  if (!markdown) {
+    return res.status(500).json({ error: 'Legal document file could not be loaded.' });
+  }
+
+  const wantsRaw =
+    req.query.format === 'raw' ||
+    req.query.format === 'md' ||
+    (req.headers.accept && req.headers.accept.includes('text/markdown'));
+
+  if (wantsRaw) {
+    return res.type('text/markdown; charset=utf-8').send(markdown);
+  }
+
+  return res.json({
+    id: entry.id,
+    title: entry.title,
+    version: LEGAL_VERSION,
+    effectiveDate: LEGAL_EFFECTIVE_DATE,
+    contactEmail: 'privacy@whisk.travel',
+    publicPath: entry.publicPath,
+    markdown,
+  });
 });
 
 function mapWmoCode(code: number): { condition: string; icon: string } {
@@ -1411,6 +1573,10 @@ app.get('/sitemap.xml', (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const urls = [
     `  <url><loc>${baseUrl}/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>`,
+    ...PUBLIC_LEGAL_DOCS.map(
+      (docEntry) =>
+        `  <url><loc>${baseUrl}${docEntry.publicPath}</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>`
+    ),
     ...Array.from(generatedGuideSlugs).map(
       (slug) =>
         `  <url><loc>${baseUrl}/?guide=${encodeURIComponent(slug)}</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>`

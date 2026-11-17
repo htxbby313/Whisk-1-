@@ -11,14 +11,17 @@ import {
 } from 'firebase/auth';
 import { appleProvider, auth, googleProvider } from '../firebase';
 import {
+  checkUserLegalConsentStatus,
   ensureUserProfile,
   isUsernameAvailable,
   isValidUsernameFormat,
+  LegalConsentInput,
   normalizeUsername,
   reserveUsername,
   updateMembershipTier,
 } from '../services/firestoreService';
-import { syncAuthenticatedAccount } from '../../geminiService';
+import { recordLegalConsentBackend, syncAuthenticatedAccount } from '../../geminiService';
+import { CURRENT_LEGAL_VERSION } from '../legal/catalog';
 import { MembershipTier } from '../../types';
 
 export interface SignUpWithEmailParams {
@@ -26,6 +29,8 @@ export interface SignUpWithEmailParams {
   password: string;
   displayName: string;
   username?: string;
+  acceptedLegal: boolean;
+  marketingOptIn?: boolean;
 }
 
 export interface SignUpWithUsernameParams {
@@ -33,6 +38,13 @@ export interface SignUpWithUsernameParams {
   password: string;
   email?: string;
   displayName?: string;
+  acceptedLegal: boolean;
+  marketingOptIn?: boolean;
+}
+
+export interface OAuthConsentParams {
+  acceptedLegal: boolean;
+  marketingOptIn?: boolean;
 }
 
 interface AuthContextValue {
@@ -40,15 +52,19 @@ interface AuthContextValue {
   authReady: boolean;
   membershipTier: MembershipTier;
   username: string | null;
+  needsLegalConsent: boolean;
+  legalConsentVersion: string | null;
   signingIn: boolean;
   authError: string | null;
-  signInWithGoogle: () => Promise<boolean>;
-  signInWithApple: () => Promise<boolean>;
+  signInWithGoogle: (oauthConsent?: OAuthConsentParams) => Promise<boolean>;
+  signInWithApple: (oauthConsent?: OAuthConsentParams) => Promise<boolean>;
   signInWithEmail: (email: string, password: string) => Promise<boolean>;
   signUpWithEmail: (params: SignUpWithEmailParams) => Promise<boolean>;
   signInWithUsername: (username: string, password: string) => Promise<boolean>;
   signUpWithUsername: (params: SignUpWithUsernameParams) => Promise<boolean>;
   sendResetPassword: (email: string) => Promise<boolean>;
+  acceptLegalConsent: (options: { marketingOptIn: boolean }) => Promise<boolean>;
+  declineLegalConsent: () => Promise<void>;
   logOut: () => Promise<void>;
   setTier: (tier: MembershipTier) => Promise<void>;
   clearAuthError: () => void;
@@ -111,14 +127,22 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [authReady, setAuthReady] = React.useState(false);
   const [membershipTier, setMembershipTier] = React.useState<MembershipTier>('Wanderer');
   const [username, setUsername] = React.useState<string | null>(null);
+  const [needsLegalConsent, setNeedsLegalConsent] = React.useState(false);
+  const [legalConsentVersion, setLegalConsentVersion] = React.useState<string | null>(null);
   const [signingIn, setSigningIn] = React.useState(false);
   const [authError, setAuthError] = React.useState<string | null>(null);
+
   const manualSignupInFlightRef = React.useRef(false);
+  const pendingOAuthConsentRef = React.useRef<LegalConsentInput | null>(null);
 
   const syncUserState = React.useCallback(
     async (
       targetUser: User,
-      overrides?: { displayName?: string; username?: string }
+      overrides?: {
+        displayName?: string;
+        username?: string;
+        legalConsent?: LegalConsentInput;
+      }
     ) => {
       const [profile, idToken] = await Promise.all([
         ensureUserProfile(targetUser, overrides),
@@ -126,9 +150,18 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ]);
       setMembershipTier(profile.membershipTier);
       setUsername(profile.username || null);
+      setLegalConsentVersion(profile.legalConsentVersion || null);
+      setNeedsLegalConsent(false);
+
       syncAuthenticatedAccount(idToken).catch((syncErr) => {
         console.error('Non-fatal account sync error:', syncErr);
       });
+
+      if (overrides?.legalConsent) {
+        recordLegalConsentBackend(idToken, overrides.legalConsent).catch((consentErr) => {
+          console.warn('Non-fatal backend consent audit log skipped:', consentErr);
+        });
+      }
     },
     []
   );
@@ -141,26 +174,48 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setUser(currentUser);
       if (currentUser) {
         try {
-          await syncUserState(currentUser);
+          const status = await checkUserLegalConsentStatus(currentUser);
+          const preConsent = pendingOAuthConsentRef.current;
+          pendingOAuthConsentRef.current = null;
+
+          if (status.hasProfile && status.hasLegalConsent) {
+            await syncUserState(currentUser);
+          } else if (preConsent) {
+            await syncUserState(currentUser, { legalConsent: preConsent });
+          } else {
+            setMembershipTier(status.membershipTier);
+            setUsername(status.username || null);
+            setLegalConsentVersion(null);
+            setNeedsLegalConsent(true);
+          }
         } catch (err) {
           console.error('Failed to sync user profile:', err);
         }
       } else {
         setMembershipTier('Wanderer');
         setUsername(null);
+        setLegalConsentVersion(null);
+        setNeedsLegalConsent(false);
       }
       setAuthReady(true);
     });
     return () => unsub();
   }, [syncUserState]);
 
-  const signInWithGoogle = async (): Promise<boolean> => {
+  const signInWithGoogle = async (oauthConsent?: OAuthConsentParams): Promise<boolean> => {
     setSigningIn(true);
     setAuthError(null);
+    pendingOAuthConsentRef.current = oauthConsent?.acceptedLegal
+      ? {
+          version: CURRENT_LEGAL_VERSION,
+          marketingOptIn: Boolean(oauthConsent.marketingOptIn),
+        }
+      : null;
     try {
       await signInWithPopup(auth, googleProvider);
       return true;
     } catch (err: any) {
+      pendingOAuthConsentRef.current = null;
       setAuthError(formatAuthError(err, 'google'));
       return false;
     } finally {
@@ -168,13 +223,20 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
-  const signInWithApple = async (): Promise<boolean> => {
+  const signInWithApple = async (oauthConsent?: OAuthConsentParams): Promise<boolean> => {
     setSigningIn(true);
     setAuthError(null);
+    pendingOAuthConsentRef.current = oauthConsent?.acceptedLegal
+      ? {
+          version: CURRENT_LEGAL_VERSION,
+          marketingOptIn: Boolean(oauthConsent.marketingOptIn),
+        }
+      : null;
     try {
       await signInWithPopup(auth, appleProvider);
       return true;
     } catch (err: any) {
+      pendingOAuthConsentRef.current = null;
       setAuthError(formatAuthError(err, 'apple'));
       return false;
     } finally {
@@ -211,7 +273,16 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     password,
     displayName,
     username: optionalUsername,
+    acceptedLegal,
+    marketingOptIn,
   }: SignUpWithEmailParams): Promise<boolean> => {
+    if (!acceptedLegal) {
+      setAuthError(
+        'Please agree to the Terms of Service, Privacy Policy, and legal policies to create your profile.'
+      );
+      return false;
+    }
+
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedName = displayName.trim();
     const cleanUsername = optionalUsername ? normalizeUsername(optionalUsername) : '';
@@ -258,6 +329,10 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       await syncUserState(cred.user, {
         displayName: trimmedName,
         username: cleanUsername || undefined,
+        legalConsent: {
+          version: CURRENT_LEGAL_VERSION,
+          marketingOptIn: Boolean(marketingOptIn),
+        },
       });
       setUser(cred.user);
       setAuthReady(true);
@@ -302,7 +377,6 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       if (res.status === 503 && payload?.code === 'ADMIN_UNAVAILABLE') {
-        // Fallback for username-only accounts when Admin lookup is temporarily unavailable
         try {
           await signInWithEmailAndPassword(
             auth,
@@ -331,7 +405,16 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     password,
     email: optionalEmail,
     displayName,
+    acceptedLegal,
+    marketingOptIn,
   }: SignUpWithUsernameParams): Promise<boolean> => {
+    if (!acceptedLegal) {
+      setAuthError(
+        'Please agree to the Terms of Service, Privacy Policy, and legal policies to create your profile.'
+      );
+      return false;
+    }
+
     const cleanUsername = normalizeUsername(rawUsername);
     const trimmedEmail = (optionalEmail || '').trim().toLowerCase();
     const resolvedDisplayName = (displayName || '').trim() || cleanUsername;
@@ -370,6 +453,10 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       await syncUserState(cred.user, {
         displayName: resolvedDisplayName,
         username: cleanUsername,
+        legalConsent: {
+          version: CURRENT_LEGAL_VERSION,
+          marketingOptIn: Boolean(marketingOptIn),
+        },
       });
       setUser(cred.user);
       setAuthReady(true);
@@ -406,10 +493,49 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
+  const acceptLegalConsent = async ({
+    marketingOptIn,
+  }: {
+    marketingOptIn: boolean;
+  }): Promise<boolean> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      setAuthError('No active session found. Please sign in again.');
+      return false;
+    }
+
+    setSigningIn(true);
+    setAuthError(null);
+    try {
+      await syncUserState(currentUser, {
+        legalConsent: {
+          version: CURRENT_LEGAL_VERSION,
+          marketingOptIn: Boolean(marketingOptIn),
+        },
+      });
+      return true;
+    } catch (err: any) {
+      setAuthError(formatAuthError(err));
+      return false;
+    } finally {
+      setSigningIn(false);
+    }
+  };
+
+  const declineLegalConsent = async (): Promise<void> => {
+    pendingOAuthConsentRef.current = null;
+    setNeedsLegalConsent(false);
+    setLegalConsentVersion(null);
+    await signOut(auth);
+  };
+
   const logOut = async () => {
+    pendingOAuthConsentRef.current = null;
     await signOut(auth);
     setMembershipTier('Wanderer');
     setUsername(null);
+    setLegalConsentVersion(null);
+    setNeedsLegalConsent(false);
   };
 
   const setTier = async (tier: MembershipTier) => {
@@ -428,6 +554,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         authReady,
         membershipTier,
         username,
+        needsLegalConsent,
+        legalConsentVersion,
         signingIn,
         authError,
         signInWithGoogle,
@@ -437,6 +565,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         signInWithUsername,
         signUpWithUsername,
         sendResetPassword,
+        acceptLegalConsent,
+        declineLegalConsent,
         logOut,
         setTier,
         clearAuthError,

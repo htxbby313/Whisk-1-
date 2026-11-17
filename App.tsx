@@ -82,6 +82,9 @@ import { WeatherForecast } from './src/components/WeatherForecast';
 import { ItineraryMap } from './src/components/ItineraryMap';
 import { TripToolkit } from './src/components/TripToolkit';
 import { AuthModal } from './src/components/AuthModal';
+import { LegalModal } from './src/components/LegalModal';
+import { LegalConsentModal } from './src/components/LegalConsentModal';
+import { isLegalDocId, LEGAL_DOCUMENTS, LegalDocId } from './src/legal/catalog';
 import {
   DESTINATION_IMAGE_BY_KEY,
   LANDMARK_POLAROIDS,
@@ -1164,11 +1167,13 @@ const WhiskPassportModal = ({
   isOpen,
   onClose,
   onSelectPlan,
+  onOpenLegalDoc,
   promptReason,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onSelectPlan: (plan: PassportPlan) => Promise<void>;
+  onOpenLegalDoc: (docId: LegalDocId) => void;
   promptReason?: string | null;
 }) => {
   const [submittingPlan, setSubmittingPlan] = React.useState<PassportPlan | null>(null);
@@ -1307,10 +1312,86 @@ const WhiskPassportModal = ({
             </div>
           ))}
         </div>
+
+        <p className="mt-6 text-center text-xs text-slate-500 font-medium leading-relaxed">
+          By activating Whisk Passport, you acknowledge our{' '}
+          <button
+            type="button"
+            onClick={() => onOpenLegalDoc('terms')}
+            className="underline font-bold text-[var(--whisk-navy)] hover:text-[var(--whisk-terracotta)] cursor-pointer"
+          >
+            Terms of Service
+          </button>
+          ,{' '}
+          <button
+            type="button"
+            onClick={() => onOpenLegalDoc('refunds')}
+            className="underline font-bold text-[var(--whisk-navy)] hover:text-[var(--whisk-terracotta)] cursor-pointer"
+          >
+            Refund & Cancellation Policy
+          </button>
+          , and{' '}
+          <button
+            type="button"
+            onClick={() => onOpenLegalDoc('disclaimer')}
+            className="underline font-bold text-[var(--whisk-navy)] hover:text-[var(--whisk-terracotta)] cursor-pointer"
+          >
+            Travel Disclaimer
+          </button>
+          .
+        </p>
       </div>
     </div>
   );
 };
+
+const LegalFooter = ({
+  onOpenLegalDoc,
+  compact = false,
+}: {
+  onOpenLegalDoc: (docId: LegalDocId) => void;
+  compact?: boolean;
+}) => (
+  <footer className={`bg-[var(--whisk-navy)] text-white ${compact ? 'py-16 mt-20' : 'py-24'}`}>
+    <div className="max-w-7xl mx-auto px-6 sm:px-10 text-center space-y-8">
+      <div className="flex items-center justify-center gap-4">
+        <div className="vibrant-gradient p-3 rounded-2xl shadow-lg">
+          <Plane className="w-7 h-7" />
+        </div>
+        <span className="text-3xl font-black tracking-tight uppercase">Whisk</span>
+      </div>
+
+      <nav
+        aria-label="Legal and Privacy"
+        className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-xs font-bold text-slate-300"
+      >
+        {LEGAL_DOCUMENTS.map((docItem) => (
+          <a
+            key={docItem.id}
+            href={docItem.path}
+            onClick={(e) => {
+              e.preventDefault();
+              onOpenLegalDoc(docItem.id);
+            }}
+            className="hover:text-white underline-offset-4 hover:underline transition-colors py-1"
+          >
+            {docItem.title === 'Cookie Policy' ? 'Cookie Policy & Privacy Choices' : docItem.title}
+          </a>
+        ))}
+        <a
+          href="mailto:privacy@whisk.travel"
+          className="text-amber-300 hover:text-amber-200 underline-offset-4 hover:underline transition-colors py-1"
+        >
+          privacy@whisk.travel
+        </a>
+      </nav>
+
+      <div className="text-slate-400 text-xs font-bold uppercase tracking-widest">
+        © 2026 Whisk, Inc. · Curated World Adventures · California, USA
+      </div>
+    </div>
+  </footer>
+);
 
 const LOADING_PHOTOS = LANDMARK_POLAROIDS.map((p, idx) => ({
   image: p.url,
@@ -1841,6 +1922,7 @@ export default function App() {
     authReady,
     membershipTier,
     username,
+    needsLegalConsent,
     signingIn,
     authError,
     logOut,
@@ -1865,19 +1947,45 @@ export default function App() {
   const [generatingBlogPostId, setGeneratingBlogPostId] = React.useState<string | null>(null);
   const [bannerError, setBannerError] = React.useState<string | null>(null);
   const [mapsQuotaExceeded, setMapsQuotaExceeded] = React.useState(false);
+  const [activeLegalDocId, setActiveLegalDocId] = React.useState<LegalDocId | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const pathMatch = window.location.pathname.match(/^\/legal\/([a-z-]+)\/?$/i);
+    if (pathMatch && isLegalDocId(pathMatch[1].toLowerCase())) {
+      return pathMatch[1].toLowerCase() as LegalDocId;
+    }
+    const queryDoc = new URLSearchParams(window.location.search).get('legal')?.toLowerCase();
+    if (queryDoc && isLegalDocId(queryDoc)) {
+      return queryDoc;
+    }
+    return null;
+  });
 
   const [shuffledArticles, setShuffledArticles] = React.useState<BlogPost[]>([]);
   const [showAllArticles, setShowAllArticles] = React.useState(false);
   const [activePromoTab, setActivePromoTab] = React.useState(0);
   const [promoImageIndex, setPromoImageIndex] = React.useState(() => Math.floor(Math.random() * PROMO_TRAVEL_PHOTOS.length));
 
+  const openLegalDoc = React.useCallback((docId: LegalDocId) => {
+    setActiveLegalDocId(docId);
+    if (typeof window !== 'undefined' && !window.location.search.includes('guide=')) {
+      window.history.replaceState(null, '', `/legal/${docId}`);
+    }
+  }, []);
+
+  const closeLegalDoc = React.useCallback(() => {
+    setActiveLegalDocId(null);
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/legal/')) {
+      window.history.replaceState(null, '', '/');
+    }
+  }, []);
+
   React.useEffect(() => {
-    if (user && pendingPlannerAfterAuth) {
+    if (user && !needsLegalConsent && pendingPlannerAfterAuth) {
       setIsProfileGateOpen(false);
       setPendingPlannerAfterAuth(false);
       setShowForm(true);
     }
-  }, [user, pendingPlannerAfterAuth]);
+  }, [user, needsLegalConsent, pendingPlannerAfterAuth]);
 
   const openAuthModal = React.useCallback(() => {
     clearAuthError();
@@ -1888,6 +1996,10 @@ export default function App() {
     if (!user) {
       setPendingPlannerAfterAuth(true);
       openAuthModal();
+      return;
+    }
+    if (needsLegalConsent) {
+      setPendingPlannerAfterAuth(true);
       return;
     }
     setActiveTab('home');
@@ -1920,11 +2032,11 @@ export default function App() {
     return () => unsubPublic();
   }, []);
 
-  // Load Firestore trips & saved places when authenticated
+  // Load Firestore trips & saved places when authenticated and legal terms accepted
   React.useEffect(() => {
     if (!authReady) return;
 
-    if (!user) {
+    if (!user || needsLegalConsent) {
       setRecentTrips([]);
       setSavedPlaces([]);
       return;
@@ -1941,7 +2053,7 @@ export default function App() {
       unsubTrips();
       unsubPlaces();
     };
-  }, [authReady, user]);
+  }, [authReady, user, needsLegalConsent]);
 
   const savedPlaceNames = React.useMemo(
     () => new Set(savedPlaces.map((p) => p.name.toLowerCase())),
@@ -2356,20 +2468,31 @@ export default function App() {
                }}
              />
            </div>
-           <footer className="bg-[var(--whisk-navy)] text-white py-16 mt-20"></footer>
+           <LegalFooter onOpenLegalDoc={openLegalDoc} compact />
          </div>
          <AuthModal
            isOpen={isProfileGateOpen && !user}
+           onOpenLegalDoc={openLegalDoc}
            onClose={() => {
              setIsProfileGateOpen(false);
              setPendingPlannerAfterAuth(false);
              clearAuthError();
            }}
          />
+         <LegalConsentModal
+           isOpen={Boolean(user && needsLegalConsent)}
+           onOpenLegalDoc={openLegalDoc}
+         />
+         <LegalModal
+           activeDocId={activeLegalDocId}
+           onSelectDoc={openLegalDoc}
+           onClose={closeLegalDoc}
+         />
          <WhiskPassportModal
            isOpen={isMembershipModalOpen}
            onClose={() => setIsMembershipModalOpen(false)}
            onSelectPlan={handleSelectPassportPlan}
+           onOpenLegalDoc={openLegalDoc}
            promptReason={passportPromptReason}
          />
        </div>
@@ -2641,6 +2764,7 @@ export default function App() {
 
       <AuthModal
         isOpen={isProfileGateOpen && !user}
+        onOpenLegalDoc={openLegalDoc}
         onClose={() => {
           setIsProfileGateOpen(false);
           setPendingPlannerAfterAuth(false);
@@ -2648,22 +2772,26 @@ export default function App() {
         }}
       />
 
+      <LegalConsentModal
+        isOpen={Boolean(user && needsLegalConsent)}
+        onOpenLegalDoc={openLegalDoc}
+      />
+
+      <LegalModal
+        activeDocId={activeLegalDocId}
+        onSelectDoc={openLegalDoc}
+        onClose={closeLegalDoc}
+      />
+
       <ChatBot />
       <WhiskPassportModal
         isOpen={isMembershipModalOpen}
         onClose={() => { setIsMembershipModalOpen(false); setPassportPromptReason(null); }}
         onSelectPlan={handleSelectPassportPlan}
+        onOpenLegalDoc={openLegalDoc}
         promptReason={passportPromptReason}
       />
-      <footer className="bg-[var(--whisk-navy)] text-white py-28">
-        <div className="max-w-7xl mx-auto px-6 sm:px-10 text-center">
-          <div className="flex items-center justify-center gap-4 mb-6">
-            <div className="vibrant-gradient p-3 rounded-2xl shadow-lg"><Plane className="w-7 h-7" /></div>
-            <span className="text-3xl font-black tracking-tight uppercase">Whisk</span>
-          </div>
-          <div className="text-slate-400 text-xs font-bold uppercase tracking-widest">© 2026 Whisk Travel · Curated World Adventures</div>
-        </div>
-      </footer>
+      <LegalFooter onOpenLegalDoc={openLegalDoc} />
     </div>
   );
 }

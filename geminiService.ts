@@ -251,6 +251,34 @@ export const syncAuthenticatedAccount = async (idToken: string): Promise<void> =
   }
 };
 
+export const recordLegalConsentBackend = async (
+  idToken: string,
+  payload: { version: string; marketingOptIn: boolean }
+): Promise<void> => {
+  const response = await fetch('/api/legal/consent', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      version: payload.version,
+      acceptedAll: true,
+      acceptedTerms: true,
+      acceptedPrivacy: true,
+      acceptedCookies: true,
+      acceptedUgc: true,
+      acceptedRefunds: true,
+      acceptedDisclaimer: true,
+      marketingOptIn: Boolean(payload.marketingOptIn),
+    }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to record backend legal consent');
+  }
+};
+
 export const fetchTripToolkit = async (idToken: string, itineraryId: string) => {
   const response = await fetch(`/api/sql/trips/${encodeURIComponent(itineraryId)}/toolkit`, {
     headers: { Authorization: `Bearer ${idToken}` },

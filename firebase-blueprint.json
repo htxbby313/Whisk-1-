@@ -33,6 +33,20 @@
           "enum": ["Wanderer", "Explorer", "Cartographer"],
           "maxLength": 30
         },
+        "legalConsentVersion": {
+          "type": "string",
+          "description": "Version identifier of accepted TOS and legal policies.",
+          "maxLength": 30
+        },
+        "legalConsentAcceptedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when legal policies were accepted."
+        },
+        "marketingOptIn": {
+          "type": "boolean",
+          "description": "Whether the user opted into optional marketing updates."
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",

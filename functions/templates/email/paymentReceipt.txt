@@ -1,0 +1,16 @@
+Payment Receipt – {{paymentId}}
+
+Hi {{userName}},
+
+Thank you for your purchase on Whisk.
+
+Amount: {{currency}} {{amount}}
+Item: {{itemDescription}}
+View invoice: {{invoiceLink}}
+
+Billing questions? Contact privacy@whisk.travel.
+
+— The Whisk Team
+Terms of Service: {{termsUrl}}
+Privacy Policy: {{privacyUrl}}
+Refund & Cancellation Policy: {{refundsUrl}}
