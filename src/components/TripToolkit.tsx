@@ -25,7 +25,7 @@ import {
 
 interface TripToolkitProps {
   itinerary: TripItinerary;
-  onSignInRequest: () => Promise<void>;
+  onSignInRequest: () => void | Promise<void>;
 }
 
 const CATEGORIES = ['Essentials', 'Clothing', 'Tech', 'Documents', 'Health'];
@@ -258,14 +258,14 @@ export const TripToolkit: React.FC<TripToolkitProps> = ({
       {!user ? (
         <div className="bg-slate-50 rounded-3xl p-8 text-center border border-slate-100 space-y-4">
           <p className="text-sm font-semibold text-slate-500">
-            Sign in with Google to save custom packing checklists and trip journal notes across your devices.
+            Sign in to save custom packing checklists and trip journal notes across your devices.
           </p>
           <button
             type="button"
             onClick={onSignInRequest}
             className="vibrant-gradient text-white px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:scale-105 transition-all cursor-pointer shadow-md"
           >
-            Sign in with Google
+            Sign In
           </button>
         </div>
       ) : loadingToolkit ? (

@@ -81,6 +81,7 @@ import { PlacesExplorer } from './src/components/PlacesExplorer';
 import { WeatherForecast } from './src/components/WeatherForecast';
 import { ItineraryMap } from './src/components/ItineraryMap';
 import { TripToolkit } from './src/components/TripToolkit';
+import { AuthModal } from './src/components/AuthModal';
 import {
   DESTINATION_IMAGE_BY_KEY,
   LANDMARK_POLAROIDS,
@@ -576,7 +577,7 @@ const HeroMosaic = () => {
   );
 };
 
-const Navbar = ({ user, membershipTier, signingIn, onHome, onMyTrips, onSignIn, onLogOut, activeTab, onUpgrade }: any) => (
+const Navbar = ({ user, username, membershipTier, signingIn, onHome, onMyTrips, onSignIn, onLogOut, activeTab, onUpgrade }: any) => (
   <nav className="sticky top-0 z-50 glass-panel shadow-sm border-b border-slate-200/60">
     <div className="max-w-7xl mx-auto px-6 sm:px-10">
       <div className="flex justify-between items-center h-20 gap-8">
@@ -643,7 +644,7 @@ const Navbar = ({ user, membershipTier, signingIn, onHome, onMyTrips, onSignIn, 
                 ) : (
                   <User className="w-4 h-4 text-[var(--whisk-terracotta)]" />
                 )}
-                <span className="max-w-[100px] truncate">{user.displayName?.split(' ')[0] || 'Profile'}</span>
+                <span className="max-w-[100px] truncate">{user.displayName?.split(' ')[0] || (username ? `@${username}` : 'Profile')}</span>
               </button>
               <button
                 onClick={onLogOut}
@@ -661,7 +662,7 @@ const Navbar = ({ user, membershipTier, signingIn, onHome, onMyTrips, onSignIn, 
               className="vibrant-gradient text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:opacity-95 transition-opacity shadow-[var(--shadow-orange)] flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
             >
               {signingIn ? <Loader2 className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />}
-              {signingIn ? 'Signing in...' : 'Sign in with Google'}
+              {signingIn ? 'Signing in...' : 'Sign In'}
             </button>
           )}
         </div>
@@ -1510,7 +1511,7 @@ const ItineraryDisplay = ({
   savedPlaceNames: Set<string>;
   onSavePlace: any;
   onCoordinatesHydrated?: (itineraryId: string, updatedDays: DayPlan[]) => void;
-  onSignInRequest: () => Promise<void>;
+  onSignInRequest: () => void | Promise<void>;
 }) => {
   const mapsSources = (itinerary.groundingSources || []).filter((s: GroundingSource) => s.sourceType === 'maps');
   const searchSources = (itinerary.groundingSources || []).filter((s: GroundingSource) => s.sourceType === 'search');
@@ -1839,9 +1840,9 @@ export default function App() {
     user,
     authReady,
     membershipTier,
+    username,
     signingIn,
     authError,
-    signInWithGoogle,
     logOut,
     setTier,
     clearAuthError,
@@ -1878,10 +1879,15 @@ export default function App() {
     }
   }, [user, pendingPlannerAfterAuth]);
 
+  const openAuthModal = React.useCallback(() => {
+    clearAuthError();
+    setIsProfileGateOpen(true);
+  }, [clearAuthError]);
+
   const handleStartPlanning = () => {
     if (!user) {
       setPendingPlannerAfterAuth(true);
-      setIsProfileGateOpen(true);
+      openAuthModal();
       return;
     }
     setActiveTab('home');
@@ -1953,7 +1959,7 @@ export default function App() {
     mapsUri?: string;
   }) => {
     if (!user) {
-      await signInWithGoogle();
+      openAuthModal();
       return;
     }
     const existing = savedPlaces.find((p) => p.name.toLowerCase() === place.name.toLowerCase());
@@ -2266,7 +2272,9 @@ export default function App() {
 
   const handleSelectPassportPlan = async (plan: PassportPlan) => {
     if (!user) {
-      await signInWithGoogle();
+      setIsMembershipModalOpen(false);
+      openAuthModal();
+      return;
     }
 
     if (plan === 'Monthly') {
@@ -2325,7 +2333,7 @@ export default function App() {
     [user, itinerary, recentTrips]
   );
 
-  const activeError = bannerError || authError;
+  const activeError = bannerError || (!isProfileGateOpen ? authError : null);
 
   if (viewingData) {
     return (
@@ -2333,7 +2341,7 @@ export default function App() {
          {mapsQuotaExceeded && <MapsQuotaBanner />}
          <div className="relative z-10 flex flex-col min-h-screen justify-between">
            <div>
-             <Navbar user={user} membershipTier={membershipTier} signingIn={signingIn} onHome={handleReturnHome} onMyTrips={() => { if(user) setActiveTab('my-trips'); setItinerary(null); handleCloseGuide(); }} onSignIn={signInWithGoogle} onLogOut={handleLogOut} activeTab={'home'} onUpgrade={handleUnlock} />
+             <Navbar user={user} username={username} membershipTier={membershipTier} signingIn={signingIn} onHome={handleReturnHome} onMyTrips={() => { if(user) setActiveTab('my-trips'); setItinerary(null); handleCloseGuide(); }} onSignIn={openAuthModal} onLogOut={handleLogOut} activeTab={'home'} onUpgrade={handleUnlock} />
              <BlogPostDisplay
                post={viewingData.post}
                hasActiveSubscription={hasActiveSubscription}
@@ -2350,6 +2358,14 @@ export default function App() {
            </div>
            <footer className="bg-[var(--whisk-navy)] text-white py-16 mt-20"></footer>
          </div>
+         <AuthModal
+           isOpen={isProfileGateOpen && !user}
+           onClose={() => {
+             setIsProfileGateOpen(false);
+             setPendingPlannerAfterAuth(false);
+             clearAuthError();
+           }}
+         />
          <WhiskPassportModal
            isOpen={isMembershipModalOpen}
            onClose={() => setIsMembershipModalOpen(false)}
@@ -2365,7 +2381,7 @@ export default function App() {
   return (
     <div className={`min-h-screen selection:bg-[var(--whisk-terracotta)] selection:text-white relative transition-all duration-700 ${isLandingView ? 'whisk-ombre-bg' : 'bg-[#FAFAFA]'}`}>
       {mapsQuotaExceeded && <MapsQuotaBanner />}
-      <Navbar user={user} membershipTier={membershipTier} signingIn={signingIn} onHome={handleReturnHome} onMyTrips={() => { if(user) setActiveTab('my-trips'); setItinerary(null); setShowForm(false); }} onSignIn={signInWithGoogle} onLogOut={handleLogOut} activeTab={activeTab} onUpgrade={handleUnlock} />
+      <Navbar user={user} username={username} membershipTier={membershipTier} signingIn={signingIn} onHome={handleReturnHome} onMyTrips={() => { if(user) setActiveTab('my-trips'); setItinerary(null); setShowForm(false); }} onSignIn={openAuthModal} onLogOut={handleLogOut} activeTab={activeTab} onUpgrade={handleUnlock} />
 
       {activeError && (
         <div className="max-w-4xl mx-auto px-6 mt-6 relative z-30">
@@ -2612,7 +2628,7 @@ export default function App() {
               savedPlaceNames={savedPlaceNames}
               onSavePlace={handleSaveOrTogglePlace}
               onCoordinatesHydrated={handleCoordinatesHydrated}
-              onSignInRequest={signInWithGoogle}
+              onSignInRequest={openAuthModal}
             />
             <div className="max-w-7xl mx-auto px-6 pb-40 flex flex-col items-center gap-12">
               <button onClick={handleStartPlanning} className="bg-white border border-slate-200 px-12 py-6 rounded-3xl font-bold uppercase tracking-widest text-xs hover:border-[var(--whisk-terracotta)] transition-all flex items-center gap-3 shadow-lg group text-[var(--whisk-navy)] cursor-pointer">
@@ -2623,35 +2639,14 @@ export default function App() {
         </div>
       )}
 
-      {isProfileGateOpen && !user && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-[var(--whisk-navy)]/70 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl border border-white relative text-center space-y-5">
-            <button
-              onClick={() => { setIsProfileGateOpen(false); setPendingPlannerAfterAuth(false); }}
-              aria-label="Close sign in prompt"
-              className="absolute top-4 right-4 p-2 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
-            >
-              <X className="w-5 h-5 text-slate-500" />
-            </button>
-            <div className="vibrant-gradient w-14 h-14 rounded-2xl mx-auto flex items-center justify-center text-white shadow-md">
-              <User className="w-7 h-7" />
-            </div>
-            <h2 className="text-2xl font-black text-[var(--whisk-navy)] tracking-tight">Create Your Traveler Profile</h2>
-            <p className="text-sm text-slate-600 leading-relaxed font-medium">
-              Sign in with Google to unlock planning. Your first itinerary preview is free (showing the first half of your days), and you can unlock full schedules & partner bookings anytime with Whisk Passport.
-            </p>
-            <button
-              type="button"
-              disabled={signingIn}
-              onClick={signInWithGoogle}
-              className="w-full vibrant-gradient text-white py-3.5 px-5 rounded-2xl font-bold text-xs uppercase tracking-wider shadow-[var(--shadow-orange)] hover:opacity-95 transition-opacity cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2"
-            >
-              {signingIn ? <Loader2 className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />}
-              {signingIn ? 'Signing in...' : 'Continue with Google'}
-            </button>
-          </div>
-        </div>
-      )}
+      <AuthModal
+        isOpen={isProfileGateOpen && !user}
+        onClose={() => {
+          setIsProfileGateOpen(false);
+          setPendingPlannerAfterAuth(false);
+          clearAuthError();
+        }}
+      />
 
       <ChatBot />
       <WhiskPassportModal

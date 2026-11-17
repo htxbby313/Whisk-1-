@@ -72,14 +72,59 @@ const toIsoString = (val: unknown): string => {
 const CANONICAL_USER_KEYS = new Set([
   'uid',
   'displayName',
+  'username',
   'photoURL',
   'membershipTier',
   'createdAt',
   'updatedAt',
 ]);
 
+const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_-]{1,22}[a-z0-9]$/;
+
+export const normalizeUsername = (raw: string): string =>
+  raw.trim().toLowerCase().replace(/^@+/, '');
+
+export const isValidUsernameFormat = (username: string): boolean =>
+  USERNAME_PATTERN.test(normalizeUsername(username));
+
+export async function isUsernameAvailable(rawUsername: string): Promise<boolean> {
+  const username = normalizeUsername(rawUsername);
+  if (!USERNAME_PATTERN.test(username)) {
+    return false;
+  }
+  const ref = doc(db, 'usernames', username);
+  try {
+    const snap = await getDoc(ref);
+    return !snap.exists();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, `usernames/${username}`);
+  }
+}
+
+export async function reserveUsername(uid: string, rawUsername: string): Promise<string> {
+  const username = normalizeUsername(rawUsername);
+  if (!USERNAME_PATTERN.test(username)) {
+    throw new Error('Username must be 3-24 characters using letters, numbers, underscores, or hyphens.');
+  }
+  const path = `usernames/${username}`;
+  const ref = doc(db, 'usernames', username);
+  try {
+    await setDoc(ref, {
+      uid,
+      username,
+      createdAt: serverTimestamp(),
+    });
+    return username;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
 // --- User Profile & PII Isolation ---
-export async function ensureUserProfile(user: User): Promise<MembershipTier> {
+export async function ensureUserProfile(
+  user: User,
+  overrides?: { displayName?: string; username?: string }
+): Promise<{ membershipTier: MembershipTier; username?: string }> {
   const userPath = `users/${user.uid}`;
   const privatePath = `users/${user.uid}/private/info`;
 
@@ -93,8 +138,27 @@ export async function ensureUserProfile(user: User): Promise<MembershipTier> {
     handleFirestoreError(error, OperationType.GET, userPath);
   }
 
+  const existingData = snap.exists() ? snap.data() || {} : {};
+  const requestedUsername = overrides?.username ? normalizeUsername(overrides.username) : undefined;
+  const existingUsername =
+    typeof existingData.username === 'string' && USERNAME_PATTERN.test(existingData.username)
+      ? existingData.username
+      : undefined;
+  const resolvedUsername =
+    requestedUsername && USERNAME_PATTERN.test(requestedUsername)
+      ? requestedUsername
+      : existingUsername;
+
+  const fallbackEmailName =
+    user.email && !user.email.endsWith('@users.whisk.app')
+      ? user.email.split('@')[0]
+      : undefined;
+
   const displayName = safeStr(
-    user.displayName || user.email?.split('@')[0],
+    overrides?.displayName ||
+      user.displayName ||
+      resolvedUsername ||
+      fallbackEmailName,
     100,
     'Whisk Traveler'
   );
@@ -105,6 +169,7 @@ export async function ensureUserProfile(user: User): Promise<MembershipTier> {
       const payload = stripUndefined({
         uid: user.uid,
         displayName,
+        username: resolvedUsername || undefined,
         photoURL: photoURL || undefined,
         membershipTier: 'Wanderer' as MembershipTier,
         createdAt: serverTimestamp(),
@@ -115,7 +180,6 @@ export async function ensureUserProfile(user: User): Promise<MembershipTier> {
       handleFirestoreError(error, OperationType.CREATE, userPath);
     }
   } else {
-    const existingData = snap.data() || {};
     if (
       existingData.membershipTier === 'Explorer' ||
       existingData.membershipTier === 'Cartographer' ||
@@ -140,6 +204,7 @@ export async function ensureUserProfile(user: User): Promise<MembershipTier> {
       if (isCanonical) {
         const updatePayload = stripUndefined({
           displayName,
+          username: resolvedUsername || undefined,
           photoURL: photoURL || undefined,
           updatedAt: serverTimestamp(),
         });
@@ -148,6 +213,7 @@ export async function ensureUserProfile(user: User): Promise<MembershipTier> {
         const migratedPayload = stripUndefined({
           uid: user.uid,
           displayName,
+          username: resolvedUsername || undefined,
           photoURL: photoURL || undefined,
           membershipTier: tier,
           createdAt:
@@ -163,7 +229,7 @@ export async function ensureUserProfile(user: User): Promise<MembershipTier> {
     }
   }
 
-  // Write isolated PII record if email exists
+  // Write isolated PII record if real email exists
   if (user.email) {
     try {
       const privateRef = doc(db, 'users', user.uid, 'private', 'info');
@@ -177,7 +243,7 @@ export async function ensureUserProfile(user: User): Promise<MembershipTier> {
     }
   }
 
-  return tier;
+  return { membershipTier: tier, username: resolvedUsername };
 }
 
 export async function updateMembershipTier(uid: string, tier: MembershipTier): Promise<void> {

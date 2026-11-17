@@ -6,6 +6,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type, ThinkingLevel, Modality, type LiveServerMessage } from '@google/genai';
 import { requireAuth, type AuthRequest } from './src/middleware/auth.ts';
+import { adminAuth, adminDb } from './src/lib/firebase-admin.ts';
 import {
   createPackingItem,
   createTripNote,
@@ -258,6 +259,55 @@ async function generateContentWithResilience(options: {
 // Health Check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
+// Resolve non-PII @username -> Firebase Auth login email via Firebase Admin
+const USERNAME_REGEX = /^[a-z0-9][a-z0-9_-]{1,22}[a-z0-9]$/;
+app.post('/api/auth/resolve-username', async (req, res) => {
+  try {
+    const raw = typeof req.body?.username === 'string' ? req.body.username : '';
+    const username = raw.trim().toLowerCase().replace(/^@+/, '');
+
+    if (!USERNAME_REGEX.test(username)) {
+      return res.status(400).json({
+        error: 'Usernames must be 3-24 characters using letters, numbers, underscores, or hyphens.',
+      });
+    }
+
+    const snap = await adminDb.collection('usernames').doc(username).get();
+    if (!snap.exists) {
+      return res.status(404).json({
+        error: `No traveler account found for @${username}.`,
+      });
+    }
+
+    const uid = snap.data()?.uid;
+    if (typeof uid !== 'string' || !uid) {
+      return res.status(404).json({
+        error: `No traveler account found for @${username}.`,
+      });
+    }
+
+    const userRecord = await adminAuth.getUser(uid);
+    if (!userRecord.email) {
+      return res.status(404).json({
+        error: `No sign-in credentials found for @${username}.`,
+      });
+    }
+
+    return res.json({ authEmail: userRecord.email });
+  } catch (err: any) {
+    if (err?.code === 'auth/user-not-found') {
+      return res.status(404).json({
+        error: 'No traveler account found for that username.',
+      });
+    }
+    console.error('Username resolution error:', err);
+    return res.status(503).json({
+      error: 'Username lookup service is temporarily unavailable.',
+      code: 'ADMIN_UNAVAILABLE',
+    });
+  }
 });
 
 function mapWmoCode(code: number): { condition: string; icon: string } {

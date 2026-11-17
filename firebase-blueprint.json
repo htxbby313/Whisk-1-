@@ -16,6 +16,12 @@
           "description": "User's display name.",
           "maxLength": 100
         },
+        "username": {
+          "type": "string",
+          "description": "Unique lowercase traveler handle.",
+          "maxLength": 24,
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{1,22}[a-z0-9]$"
+        },
         "photoURL": {
           "type": "string",
           "description": "Profile avatar URL.",
@@ -407,6 +413,31 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "UsernameReservation": {
+      "title": "UsernameReservation",
+      "description": "Non-PII username uniqueness index mapping a lowercase username handle to a Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID owning this username.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "username": {
+          "type": "string",
+          "description": "Lowercase username matching document ID.",
+          "maxLength": 24,
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{1,22}[a-z0-9]$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of reservation."
+        }
+      },
+      "required": ["uid", "username", "createdAt"]
     }
   },
   "firestore": {
@@ -417,6 +448,10 @@
     "/users/{userId}/private/{docId}": {
       "schema": { "$ref": "#/entities/UserPrivateInfo" },
       "description": "Isolated private user PII (such as email) accessible only by the owner."
+    },
+    "/usernames/{username}": {
+      "schema": { "$ref": "#/entities/UsernameReservation" },
+      "description": "Unique lowercase username reservation index (non-PII)."
     },
     "/users/{userId}/savedPlaces/{placeId}": {
       "schema": { "$ref": "#/entities/SavedPlace" },
