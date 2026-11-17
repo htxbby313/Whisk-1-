@@ -27,15 +27,21 @@ const app = express();
 
 app.use(express.json({ limit: '10mb' }));
 
-// Shared Gemini client utility on the server with telemetry User-Agent header
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || process.env.API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    },
-  },
-});
+// Lazy-initialized Gemini client utility on the server with telemetry User-Agent header
+let aiClient: GoogleGenAI | null = null;
+function getAi(): GoogleGenAI {
+  if (!aiClient) {
+    aiClient = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY || process.env.API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  }
+  return aiClient;
+}
 
 interface GroundingSource {
   title: string;
@@ -230,7 +236,7 @@ async function generateContentWithResilience(options: {
       await sleep(attempt.delayBeforeMs);
     }
     try {
-      const response = await ai.models.generateContent({
+      const response = await getAi().models.generateContent({
         model: attempt.model,
         contents,
         config: attempt.config,
@@ -659,7 +665,7 @@ app.post(['/api/gemini/itinerary', '/api/itinerary'], async (req, res) => {
     let mapsSources: GroundingSource[] = [];
     let mapsOverview = '';
     try {
-      const mapsResponse = await ai.models.generateContent({
+      const mapsResponse = await getAi().models.generateContent({
         model: 'gemini-4-hydrogen',
         contents: mapsPrompt,
         config: mapsConfig,
@@ -991,7 +997,7 @@ app.post(['/api/gemini/chat/stream', '/api/chat/stream'], async (req, res) => {
     let activeModel = model;
     let stream: any;
     try {
-      stream = await ai.models.generateContentStream({
+      stream = await getAi().models.generateContentStream({
         model,
         contents,
         config,
@@ -1005,7 +1011,7 @@ app.post(['/api/gemini/chat/stream', '/api/chat/stream'], async (req, res) => {
         if (liteConfig.thinkingConfig) {
           liteConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.MINIMAL };
         }
-        stream = await ai.models.generateContentStream({
+        stream = await getAi().models.generateContentStream({
           model: activeModel,
           contents,
           config: liteConfig,
@@ -1258,7 +1264,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
   let session: any = null;
 
   try {
-    session = await ai.live.connect({
+    session = await getAi().live.connect({
       model: 'gemini-3.8-live',
       config: {
         responseModalities: [Modality.AUDIO],
