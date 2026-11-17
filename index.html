@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en" prefix="og: https://ogp.me/ns#">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Primary SEO Meta Tags -->
+    <title>Whisk — Bespoke AI Travel Planning, Itinerary Blog & Global Concierge</title>
+    <meta name="title" content="Whisk — Bespoke AI Travel Planning, Itinerary Blog & Global Concierge">
+    <meta name="description" content="Whisk is a global AI travel concierge and subscription service. Get bespoke day-by-day itineraries, vetted boutique hotels, secret local dining, and commuter booking links across 150+ countries. First trip preview is free!">
+    <meta name="keywords" content="travel planner, AI travel itinerary, bespoke travel blog, Whisk passport, Tokyo itinerary, Amalfi Coast travel guide, Paris hidden gems, curated expeditions, luxury travel concierge, vacation planner">
+    <meta name="author" content="Whisk Technologies Inc.">
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+    <link rel="canonical" href="https://whisk.travel/">
+
+    <!-- Geo-Targeting & Location Metadata -->
+    <meta name="geo.region" content="US-CA">
+    <meta name="geo.placename" content="Global Travel Network & Headquarters">
+    <meta name="geo.position" content="37.7749;-122.4194">
+    <meta name="ICBM" content="37.7749, -122.4194">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://whisk.travel/">
+    <meta property="og:site_name" content="Whisk Global Concierge">
+    <meta property="og:title" content="Whisk — Bespoke AI Travel Planning & Global Concierge">
+    <meta property="og:description" content="Plan bespoke world journeys with AI intelligence and verified scout archives. Day-by-day routes, boutique hotels, and seamless transit.">
+    <meta property="og:image" content="https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&w=1200&auto=format&fit=crop">
+
+    <!-- Twitter / X -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://whisk.travel/">
+    <meta property="twitter:site" content="@whisktravel">
+    <meta property="twitter:title" content="Whisk — Bespoke AI Travel Planning & Itinerary Blog">
+    <meta property="twitter:description" content="Curated world expeditions powered by Gemini AI and certified local scouts. First planned trip is 100% free!">
+    <meta property="twitter:image" content="https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&w=1200&auto=format&fit=crop">
+
+    <!-- Tailwind & Google Fonts -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Base Schema.org JSON-LD (TravelAgency & WebApplication) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "TravelAgency",
+          "@id": "https://whisk.travel/#organization",
+          "name": "Whisk Technologies Inc.",
+          "url": "https://whisk.travel",
+          "logo": "https://whisk.travel/logo.png",
+          "description": "Bespoke AI-powered travel planning and subscription concierge service.",
+          "sameAs": [
+            "https://twitter.com/whisktravel",
+            "https://instagram.com/whisktravel"
+          ]
+        },
+        {
+          "@type": "WebApplication",
+          "@id": "https://whisk.travel/#webapp",
+          "name": "Whisk Travel Itinerary Planner",
+          "url": "https://whisk.travel",
+          "applicationCategory": "TravelApplication",
+          "operatingSystem": "All",
+          "offers": {
+            "@type": "Offer",
+            "price": "0.00",
+            "priceCurrency": "USD",
+            "description": "First planned trip itinerary preview is 100% free. Paid Whisk Passport subscriptions available."
+          }
+        }
+      ]
+    }
+    </script>
+
+    <!-- Google AI Studio Importmap -->
+    <script type="importmap">
+    {
+      "imports": {
+        "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
+        "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+        "react/": "https://esm.sh/react@^19.2.3/",
+        "react": "https://esm.sh/react@^19.2.3",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+      }
+    }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #FFFDF9;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+  <defs>
+    <!-- Vibrant Adventure Gradient -->
+    <linearGradient id="whiskGradient" x1="60" y1="120" x2="452" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF5A36"/>
+      <stop offset="28%" stop-color="#FF2E74"/>
+      <stop offset="55%" stop-color="#8F39FF"/>
+      <stop offset="80%" stop-color="#00C4FF"/>
+      <stop offset="100%" stop-color="#00F0C8"/>
+    </linearGradient>
+    <!-- Subtle Drop Shadow for Ribbon Depth -->
+    <filter id="ribbonShadow" x="-10%" y="-10%" width="130%" height="130%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#14082B" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#ribbonShadow)">
+    <!-- Road Base (Stylized W Winding Road) -->
+    <path d="M 88 152 
+             C 112 250, 136 384, 184 384 
+             C 226 384, 234 236, 256 188 
+             C 278 236, 286 384, 328 384 
+             C 376 384, 400 250, 424 152"
+          stroke="url(#whiskGradient)"
+          stroke-width="52"
+          stroke-linecap="round"
+          stroke-linejoin="round" />
+
+    <!-- Road Dashed Centerline -->
+    <path d="M 88 152 
+             C 112 250, 136 384, 184 384 
+             C 226 384, 234 236, 256 188 
+             C 278 236, 286 384, 328 384 
+             C 376 384, 400 250, 424 152"
+          stroke="#FFFFFF"
+          stroke-opacity="0.95"
+          stroke-width="6"
+          stroke-linecap="round"
+          stroke-dasharray="14 14" />
+  </g>
+</svg>
