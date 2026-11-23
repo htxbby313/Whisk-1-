@@ -4,6 +4,8 @@ export interface Activity {
   location: string;
   link?: string;
   userRating?: number;
+  isAnchor?: boolean; // True if this was a user-specified must-see spot
+  branchingReason?: string; // Context for how this uniquely branches from or pairs with an anchor
 }
 
 export interface DayPlan {
@@ -52,6 +54,7 @@ export interface TripItinerary {
   accessibility?: string[];
   geo?: GeoData;
   seo?: SeoMetadata;
+  mustSeeAnchors?: string[];
 }
 
 export interface SearchParams {
@@ -61,4 +64,5 @@ export interface SearchParams {
   budget: 'Budget' | 'Mid-range' | 'Luxury';
   pace: 'Relaxed' | 'Moderate' | 'Fast-paced';
   accessibility: string[];
+  mustSeeAnchors?: string[];
 }

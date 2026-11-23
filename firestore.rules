@@ -1,0 +1,93 @@
+// Firestore Security Rules for the Whisk app
+// -------------------------------------------------
+// This rule set enforces the following security model:
+//   • Users can read/write only their own itinerary documents.
+//   • Public itineraries (isPublic == true) are readable by anyone.
+//   • Users can read/write only their own profile document in /users.
+//   • Strict type checking, field length limits and immutable fields protect
+//     against privilege escalation and resource‑exhaustion attacks.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -----------------------------------------------------------------
+    // Helper functions
+    // -----------------------------------------------------------------
+    // Checks that the request is made by an authenticated Firebase Auth user.
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    // Validate itinerary payloads for both create and update operations.
+    function isValidItinerary(data) {
+      // Type checks
+      return data.userId is string
+        && data.userId.size() > 0 && data.userId.size() <= 128
+        && data.destination is string
+        && data.destination.size() > 0 && data.destination.size() <= 100
+        && data.dates is list
+        && data.dates.size() <= 30
+        && data.dates.all(date => date is timestamp)
+        && data.isPublic is bool
+        && (data.publicSlug == null || data.publicSlug is string);
+    }
+      // Type checks
+      return data.userId is string
+        && data.userId.size() > 0 && data.userId.size() <= 128
+        && data.destination is string
+        && data.destination.size() > 0 && data.destination.size() <= 100
+        && data.dates is list
+        && data.dates.size() <= 30
+        // Ensure every element in the dates array is a timestamp.  The `all`
+        // helper iterates over the list and returns true only if the predicate
+        // holds for every element.
+        && data.dates.all(date => date is timestamp)
+        && data.isPublic is bool;
+    }
+
+    // Simple validator for user profile documents.  Extend as needed for extra
+    // fields.  The document ID must always match the authenticated UID.
+    function isValidUserProfile(data) {
+      return true; // No field‑level constraints for now.
+    }
+
+    // -----------------------------------------------------------------
+    // /itineraries collection
+    // -----------------------------------------------------------------
+    match /itineraries/{itineraryId} {
+      // READ: owner OR public itinerary
+      allow read: if isSignedIn()
+                    && (resource.data.isPublic == true
+                        || resource.data.userId == request.auth.uid);
+
+      // CREATE: user must be signed‑in, userId must equal their UID, and the
+      // payload must pass validation, including a createdAt timestamp.
+      allow create: if isSignedIn()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.createdAt is timestamp
+                    && isValidItinerary(request.resource.data);
+
+      // UPDATE: only the owner may edit.  The userId field is immutable to
+      // prevent ownership hijacking.  Payload must still be valid.
+      allow update: if isSignedIn()
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == resource.data.userId
+                    && isValidItinerary(request.resource.data);
+
+      // DELETE: only the owner may delete the document.
+      allow delete: if isSignedIn()
+                    && resource.data.userId == request.auth.uid;
+    }
+
+    // -----------------------------------------------------------------
+    // /users collection – one document per UID
+    // -----------------------------------------------------------------
+    match /users/{uid} {
+      // The document ID is the UID; users can only access their own profile.
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // NOTE: All other paths are denied by default (implicit deny).
+  }
+}

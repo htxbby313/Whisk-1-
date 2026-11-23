@@ -47,6 +47,17 @@ export const generateItinerary = async (
         ? `IMPORTANT: The traveler has specific needs: ${params.accessibility.join(', ')}. All recommended venues and activities MUST be confirmed to meet these needs.`
         : '';
 
+    const anchorsStr =
+      params.mustSeeAnchors && params.mustSeeAnchors.length > 0
+        ? `ANCHOR SPOTS & MUST-SEES (NON-NEGOTIABLE):
+    The traveler has specified these essential anchor spots/activities: ${params.mustSeeAnchors.join(', ')}.
+    ANCHOR & BRANCHING GUIDELINES:
+    1. Lock each specified anchor spot into the daily schedule at realistic times and geographically sound neighborhoods.
+    2. Set "isAnchor": true for each of these anchor activities.
+    3. Surrounding each anchor, craft unique, hyper-local "branching" experiences (e.g., hidden garden, artisan workshop, local aperitivo, or secret view within a 5-10 minute walk) so returning travelers experience fresh discoveries.
+    4. Provide "branchingReason" explaining the local connection or context.`
+        : '';
+
     const prompt = `You are a Senior Travel Agent for "Whisk", a bespoke travel agency. Create a highly detailed and engaging travel itinerary based on years of professional experience.
 
     DESTINATION: ${params.destination}
@@ -55,6 +66,7 @@ export const generateItinerary = async (
     BUDGET: ${params.budget}
     PACE: ${params.pace}
     ${accessibilityStr}
+    ${anchorsStr}
 
     GUIDELINES:
     1. Title: Create a warm, inviting, magazine-style title.
@@ -91,6 +103,8 @@ export const generateItinerary = async (
                         time: { type: Type.STRING },
                         description: { type: Type.STRING },
                         location: { type: Type.STRING },
+                        isAnchor: { type: Type.BOOLEAN },
+                        branchingReason: { type: Type.STRING },
                       },
                       required: ['time', 'description', 'location'],
                     },
@@ -169,6 +183,7 @@ export const generateItinerary = async (
       budget: params.budget,
       pace: params.pace,
       accessibility: params.accessibility,
+      mustSeeAnchors: params.mustSeeAnchors,
       overallRating: 0,
       geo,
       seo,

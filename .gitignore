@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Runtime config secrets
+functions/.runtimeconfig.json
+.firebase/
+.agents/
+.claude/
+skills-lock.json

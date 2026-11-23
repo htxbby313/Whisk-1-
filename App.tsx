@@ -35,6 +35,9 @@ import {
   Crown,
   Car,
   Shield,
+  Instagram,
+  Twitter,
+  Youtube,
 } from 'lucide-react';
 import {
   generateItinerary,
@@ -495,78 +498,84 @@ const CommunityFeed = ({
     itineraries.length > 0 ? itineraries.slice(0, 3) : defaultTrending;
 
   return (
-    <section className="py-24 bg-gradient-to-b from-[#FFFDF9] to-white relative z-10">
+    <section className="py-16 md:py-24 bg-gradient-to-b from-[#FFFDF9] to-white relative z-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-end mb-16">
-          <div>
-            <div className="inline-flex items-center gap-2 bg-gradient-to-r from-orange-100 to-amber-100 text-orange-800 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest mb-4 shadow-sm">
-              <TrendingUp className="w-4 h-4 text-orange-600" /> Scout-Verified
-              Expeditions
-            </div>
-            <h2
-              className="text-4xl md:text-5xl font-black mb-3 tracking-tight"
-              style={{ color: colors.dark }}
-            >
-              Trending Global Escapes
-            </h2>
-            <p className="text-slate-600 text-base md:text-lg font-medium max-w-2xl">
-              Authentic journeys charted across 150+ countries. Real scouts,
-              verified spots, unforgettable routes.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-10">
-          {displayList.map((trip) => {
-            const photoUrl = getDestinationImage(trip.destination);
-            return (
-              <div
-                key={trip.id}
-                className="bg-white rounded-[2.5rem] overflow-hidden shadow-xl hover:shadow-2xl border border-slate-100 transition-all duration-300 group cursor-pointer hover:-translate-y-2 flex flex-col"
-                onClick={() => onView(trip)}
-              >
-                <div className="relative h-64 overflow-hidden">
-                  <img
-                    src={photoUrl}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
-                    alt={trip.destination}
-                  />
-                  <div className="absolute top-4 left-4 flex flex-wrap gap-2">
-                    <span className="bg-orange-500/90 backdrop-blur-md text-white px-3.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-md">
-                      {trip.budget || 'Mid-range'}
-                    </span>
-                    <span className="bg-emerald-600/90 backdrop-blur-md text-white px-3.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-md flex items-center gap-1">
-                      <Mountain className="w-3 h-3" /> {trip.pace || 'Moderate'}
-                    </span>
-                  </div>
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent"></div>
-                  <div className="absolute bottom-5 left-6 right-6 text-white">
-                    <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.25em] mb-1 text-amber-300">
-                      <MapPin className="w-3.5 h-3.5" />
-                      {trip.destination}
-                    </div>
-                    <h3 className="text-xl font-black tracking-tight leading-snug line-clamp-1">
-                      {trip.title}
-                    </h3>
-                  </div>
-                </div>
-                <div className="p-6 flex-1 flex flex-col justify-between">
-                  <p className="text-slate-600 text-xs md:text-sm font-medium leading-relaxed mb-6 line-clamp-2">
-                    {trip.summary}
-                  </p>
-                  <div className="flex items-center justify-between border-t border-slate-100 pt-4">
-                    <span className="text-xs font-black uppercase tracking-wider text-orange-600 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                      Inspect Route <ChevronRight className="w-4 h-4" />
-                    </span>
-                    <div className="bg-amber-50 px-2.5 py-1 rounded-xl flex items-center gap-1 text-xs font-black text-amber-700">
-                      <Star className="w-3.5 h-3.5 fill-current text-amber-500" />
-                      4.9
-                    </div>
-                  </div>
-                </div>
+        {/* Master Community Field Guides Card holding nested blog posts */}
+        <div className="bg-white rounded-3xl md:rounded-[3rem] p-6 sm:p-10 md:p-12 border-2 border-orange-100 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.06)]">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-10 pb-8 border-b border-slate-100">
+            <div>
+              <div className="inline-flex items-center gap-2 bg-gradient-to-r from-orange-100 to-amber-100 text-orange-800 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest mb-3 shadow-xs">
+                <TrendingUp className="w-4 h-4 text-orange-600" />
+                Traveler Journal &amp; Dispatches
               </div>
-            );
-          })}
+              <h2
+                className="text-3xl md:text-5xl font-black mb-2 tracking-tight"
+                style={{ color: colors.dark }}
+              >
+                Community Field Guides
+              </h2>
+              <p className="text-slate-600 text-sm md:text-base font-medium max-w-2xl leading-relaxed">
+                Anonymized public itineraries and blog articles generated by Whisk travelers. Click any guide to inspect the route.
+              </p>
+            </div>
+            <span className="text-xs font-black uppercase tracking-wider text-orange-700 bg-orange-50 border border-orange-200/80 px-4 py-2 rounded-2xl shrink-0">
+              Live Community Blog Posts
+            </span>
+          </div>
+
+          {/* Nested Blog Post Cards Grid */}
+          <div className="grid md:grid-cols-3 gap-6 md:gap-8">
+            {displayList.map((trip) => {
+              const photoUrl = getDestinationImage(trip.destination);
+              return (
+                <div
+                  key={trip.id}
+                  className="bg-slate-50/60 rounded-3xl overflow-hidden shadow-md hover:shadow-xl border border-slate-200/80 transition-all duration-300 group cursor-pointer hover:-translate-y-1.5 flex flex-col"
+                  onClick={() => onView(trip)}
+                >
+                  <div className="relative h-56 overflow-hidden">
+                    <img
+                      src={photoUrl}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      alt={trip.destination}
+                    />
+                    <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                      <span className="bg-orange-500/90 backdrop-blur-md text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm">
+                        {trip.budget || 'Mid-range'}
+                      </span>
+                      <span className="bg-emerald-600/90 backdrop-blur-md text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm flex items-center gap-1">
+                        <Mountain className="w-3 h-3" /> {trip.pace || 'Moderate'}
+                      </span>
+                    </div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent"></div>
+                    <div className="absolute bottom-4 left-5 right-5 text-white">
+                      <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.2em] mb-1 text-amber-300">
+                        <MapPin className="w-3.5 h-3.5" />
+                        {trip.destination}
+                      </div>
+                      <h3 className="text-lg font-black tracking-tight leading-snug line-clamp-1">
+                        {trip.title}
+                      </h3>
+                    </div>
+                  </div>
+                  <div className="p-5 flex-1 flex flex-col justify-between">
+                    <p className="text-slate-600 text-xs md:text-sm font-medium leading-relaxed mb-4 line-clamp-2">
+                      {trip.summary}
+                    </p>
+                    <div className="flex items-center justify-between border-t border-slate-200/70 pt-3">
+                      <span className="text-xs font-black uppercase tracking-wider text-orange-600 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                        Read Field Guide <ChevronRight className="w-4 h-4" />
+                      </span>
+                      <div className="bg-amber-100/70 px-2.5 py-1 rounded-xl flex items-center gap-1 text-xs font-black text-amber-800">
+                        <Star className="w-3.5 h-3.5 fill-current text-amber-500" />
+                        4.9
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </section>
@@ -601,6 +610,7 @@ const WhiskHeroSection = ({
   const [pace, setPace] = useState<'Relaxed' | 'Moderate' | 'Fast-paced'>(
     'Moderate'
   );
+  const [mustSeeInput, setMustSeeInput] = useState('');
 
   const popularChips = [
     { label: 'Paris, France', icon: '🗼' },
@@ -629,6 +639,11 @@ const WhiskHeroSection = ({
   const handleWhiskSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!destination.trim() || loading) return;
+    const mustSeeAnchors = mustSeeInput
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
     onGenerate({
       destination: destination.trim(),
       duration,
@@ -636,6 +651,7 @@ const WhiskHeroSection = ({
       budget,
       pace,
       accessibility: [],
+      mustSeeAnchors: mustSeeAnchors.length > 0 ? mustSeeAnchors : undefined,
     });
   };
 
@@ -704,39 +720,17 @@ const WhiskHeroSection = ({
             <h1 className="text-4xl md:text-6xl font-black text-slate-900 tracking-tight mb-2 leading-tight">
               Where will you{' '}
               <span className="bg-gradient-to-r from-orange-500 via-amber-500 to-rose-500 bg-clip-text text-transparent">
-                whisk to?
-              </span>
+                whisk
+              </span>{' '}
+              to?
             </h1>
             <p className="text-slate-600 text-sm md:text-base font-semibold max-w-lg mx-auto mb-6">
               Tell our world scouts your dream destination. We chart the
               ultimate day-by-day expedition in seconds.
             </p>
 
-            {!userProfile ? (
-              <div className="p-4 rounded-3xl bg-gradient-to-r from-orange-100/90 via-amber-100/90 to-rose-100/90 border-2 border-orange-200/90 flex flex-col sm:flex-row items-center justify-between gap-3 text-left shadow-sm">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-orange-500 text-white flex items-center justify-center shrink-0 shadow-md">
-                    <User className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                      Required: Create Traveler Profile
-                    </div>
-                    <div className="text-[11px] text-slate-600 font-medium">
-                      Your first custom expedition preview is completely free!
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={onOpenAuth}
-                  className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-wider shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0"
-                >
-                  Create Profile ✨
-                </button>
-              </div>
-            ) : (
-              <div className="px-4 py-2.5 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-between text-xs text-emerald-800 font-semibold text-left">
+            {userProfile && (
+              <div className="px-4 py-2.5 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-between text-xs text-emerald-800 font-semibold text-left mb-4">
                 <span>
                   Welcome, <strong>{userProfile.name}</strong> (
                   {isSubscribed
@@ -791,45 +785,43 @@ const WhiskHeroSection = ({
               </div>
             </div>
 
-            {/* Stay Duration & Budget Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Single Unified Preferences Card with Evenly Spaced Tabs */}
+            <div className="bg-slate-50/90 rounded-3xl p-5 border border-slate-200/80 space-y-4 shadow-xs">
               <div>
-                <label className="block text-[11px] font-black uppercase tracking-[0.25em] text-slate-500 mb-2 ml-2">
-                  Duration
+                <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-600 mb-1.5 ml-1">
+                  Trip Duration
                 </label>
                 <div className="relative">
-                  <Calendar className="absolute left-5 top-1/2 -translate-y-1/2 text-orange-500 w-5 h-5 pointer-events-none" />
+                  <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-orange-500 w-4 h-4 pointer-events-none" />
                   <select
                     value={duration}
                     onChange={(e) => setDuration(e.target.value)}
-                    className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl py-3.5 pl-14 pr-8 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
+                    className="w-full bg-white border border-slate-200 rounded-2xl py-3 pl-11 pr-8 text-xs md:text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer shadow-xs"
                   >
                     <option value="2 days">2 Days (Weekend Flash)</option>
                     <option value="3 days">3 Days (Long Weekend)</option>
                     <option value="4 days">4 Days (Classic Route)</option>
                     <option value="5 days">5 Days (In-Depth)</option>
-                    <option value="7 days">
-                      7 Days (Full Week Expedition)
-                    </option>
+                    <option value="7 days">7 Days (Full Week Expedition)</option>
                     <option value="10 days">10 Days (Grand Tour)</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-black uppercase tracking-[0.25em] text-slate-500 mb-2 ml-2">
+                <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-600 mb-1.5 ml-1">
                   Budget Style
                 </label>
-                <div className="grid grid-cols-3 gap-1.5 bg-slate-100 p-1.5 rounded-2xl">
+                <div className="grid grid-cols-3 gap-1 bg-slate-200/70 p-1 rounded-2xl">
                   {(['Budget', 'Mid-range', 'Luxury'] as const).map((b) => (
                     <button
                       key={b}
                       type="button"
                       onClick={() => setBudget(b)}
-                      className={`py-2 text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
+                      className={`py-2 text-center text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
                         budget === b
-                          ? 'bg-white text-orange-600 shadow-md scale-102'
-                          : 'text-slate-500 hover:text-slate-900'
+                          ? 'bg-white text-orange-600 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
                       {b}
@@ -837,28 +829,27 @@ const WhiskHeroSection = ({
                   ))}
                 </div>
               </div>
-            </div>
 
-            {/* Travel Pace */}
-            <div>
-              <label className="block text-[11px] font-black uppercase tracking-[0.25em] text-slate-500 mb-2 ml-2">
-                Pace of Exploration
-              </label>
-              <div className="grid grid-cols-3 gap-2 bg-slate-100 p-1.5 rounded-2xl">
-                {(['Relaxed', 'Moderate', 'Fast-paced'] as const).map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setPace(p)}
-                    className={`py-2 text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
-                      pace === p
-                        ? 'bg-white text-orange-600 shadow-md scale-102'
-                        : 'text-slate-500 hover:text-slate-900'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
+              <div>
+                <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-600 mb-1.5 ml-1">
+                  Pace of Exploration
+                </label>
+                <div className="grid grid-cols-3 gap-1 bg-slate-200/70 p-1 rounded-2xl">
+                  {(['Relaxed', 'Moderate', 'Fast-paced'] as const).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPace(p)}
+                      className={`py-2 text-center text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
+                        pace === p
+                          ? 'bg-white text-orange-600 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -885,6 +876,29 @@ const WhiskHeroSection = ({
               </div>
             </div>
 
+            {/* Must-See Anchors / Return Traveler Section */}
+            <div className="bg-gradient-to-r from-orange-50/80 via-amber-50/80 to-rose-50/80 p-5 rounded-3xl border-2 border-orange-200/80 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-800 flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-orange-600" />
+                  Must-See Anchors (Optional)
+                </label>
+                <span className="text-[10px] font-black uppercase tracking-wider text-orange-700 bg-white/90 px-2.5 py-1 rounded-full shadow-xs border border-orange-200">
+                  📍 Anchor &amp; Branch
+                </span>
+              </div>
+              <input
+                type="text"
+                placeholder="e.g. Chez Janou, Sunset at Sacré-Cœur, Le Marais vintage shops..."
+                className="w-full bg-white border-2 border-orange-200/90 rounded-2xl py-3 px-4 text-xs md:text-sm font-bold text-slate-800 placeholder:text-slate-400 outline-none focus:ring-4 focus:ring-orange-200 focus:border-orange-500 transition-all"
+                value={mustSeeInput}
+                onChange={(e) => setMustSeeInput(e.target.value)}
+              />
+              <p className="text-[11px] text-slate-600 font-semibold mt-2 leading-relaxed">
+                Been here before or have non-negotiable spots? Whisk locks your anchors into your schedule, then discovers hidden local gems directly around them.
+              </p>
+            </div>
+
             {/* Submit Button */}
             <button
               type="submit"
@@ -899,7 +913,7 @@ const WhiskHeroSection = ({
               ) : (
                 <>
                   <Compass className="w-6 h-6 text-yellow-200 animate-spin-slow" />
-                  <span>Whisk Me Away ✨</span>
+                  <span>Let's Go ✈️</span>
                 </>
               )}
             </button>
@@ -914,6 +928,8 @@ const WhiskHeroSection = ({
 const ItineraryDisplay = ({
   itinerary,
   isSubscribed,
+  userProfile,
+  onOpenAuth,
   onRateActivity,
   onRateOverall,
   onOpenPassport,
@@ -921,6 +937,8 @@ const ItineraryDisplay = ({
 }: {
   itinerary: TripItinerary;
   isSubscribed: boolean;
+  userProfile?: UserProfile | null;
+  onOpenAuth?: () => void;
   onRateActivity: (dIdx: number, aIdx: number, r: number) => void;
   onRateOverall: (r: number) => void;
   onOpenPassport: (reason?: string) => void;
@@ -1070,15 +1088,26 @@ const ItineraryDisplay = ({
                 {day.activities.map((act, aIdx) => (
                   <div
                     key={aIdx}
-                    className="bg-white rounded-3xl p-6 md:p-8 shadow-md border border-slate-100 hover:shadow-lg transition-all"
+                    className={`bg-white rounded-3xl p-6 md:p-8 shadow-md border ${
+                      act.isAnchor
+                        ? 'border-2 border-orange-400 bg-orange-50/20'
+                        : 'border-slate-100'
+                    } hover:shadow-lg transition-all`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                      <div
-                        style={{ backgroundColor: colors.dark }}
-                        className="inline-flex items-center gap-2 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider w-fit"
-                      >
-                        <Clock className="w-3.5 h-3.5 text-amber-400" />
-                        {act.time}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div
+                          style={{ backgroundColor: colors.dark }}
+                          className="inline-flex items-center gap-2 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider w-fit"
+                        >
+                          <Clock className="w-3.5 h-3.5 text-amber-400" />
+                          {act.time}
+                        </div>
+                        {act.isAnchor && (
+                          <span className="inline-flex items-center gap-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm">
+                            📍 Locked Anchor
+                          </span>
+                        )}
                       </div>
                       <StarRating
                         rating={act.userRating}
@@ -1093,11 +1122,57 @@ const ItineraryDisplay = ({
                     <p className="text-slate-600 text-sm md:text-base leading-relaxed font-medium">
                       {act.description}
                     </p>
+                    {act.branchingReason && (
+                      <div className="mt-4 p-3.5 bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl border border-amber-200/80 text-xs text-slate-700 font-semibold flex items-start gap-2.5">
+                        <Sparkles className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
+                        <div>
+                          <strong className="text-orange-800 uppercase tracking-wider text-[10px] block mb-0.5">
+                            Branching Discovery:
+                          </strong>
+                          {act.branchingReason}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
           ))}
+
+          {/* Free Preview Conversion Card */}
+          {!isSubscribed && (
+            <div className="relative p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-orange-500 via-amber-500 to-rose-500 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-6 my-8">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-[0.25em] bg-white/20 px-3 py-1 rounded-full text-white inline-block mb-2">
+                  Free Preview Active
+                </span>
+                <h4 className="text-xl sm:text-2xl font-black tracking-tight mb-1">
+                  Enjoying your {itinerary.destination} preview?
+                </h4>
+                <p className="text-white/90 text-xs sm:text-sm font-medium max-w-lg leading-relaxed">
+                  {!userProfile
+                    ? 'Create your free traveler profile to save this route and unlock all days with partner booking links!'
+                    : 'Upgrade to Whisk Passport to unlock all remaining days, secret spots, and booking links.'}
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 shrink-0 w-full md:w-auto">
+                {!userProfile && onOpenAuth && (
+                  <button
+                    onClick={onOpenAuth}
+                    className="px-5 py-3 rounded-2xl bg-white text-slate-900 hover:bg-orange-50 font-black text-xs uppercase tracking-wider shadow-md hover:scale-105 active:scale-95 transition-all text-center cursor-pointer"
+                  >
+                    Create Free Profile ✨
+                  </button>
+                )}
+                <button
+                  onClick={() => onOpenPassport('Unlock full multi-day itinerary')}
+                  className="px-5 py-3 rounded-2xl bg-slate-950 hover:bg-slate-900 text-white font-black text-xs uppercase tracking-wider shadow-md hover:scale-105 active:scale-95 transition-all text-center cursor-pointer"
+                >
+                  Unlock All Days 👑
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Locked Days (when not subscribed) */}
           {lockedDays.map((day) => (
@@ -1466,17 +1541,6 @@ export default function App() {
   };
 
   const handleGenerate = async (params: SearchParams) => {
-    // If not signed in, prompt profile creation first
-    if (!userProfile) {
-      setToast({
-        message:
-          'Please create your traveler profile to generate your trip preview!',
-        type: 'error',
-      });
-      setIsAuthModalOpen(true);
-      return;
-    }
-
     setLoading(true);
     try {
       const result = await generateItinerary(params);
@@ -1673,65 +1737,65 @@ export default function App() {
             }}
           />
 
-          {/* Value Props & Worldly Highlights */}
-          <section className="py-28 bg-white border-t border-slate-100">
-            <div className="max-w-7xl mx-auto px-4">
-              <div className="grid md:grid-cols-2 gap-16 items-center">
-                <div className="relative">
+          {/* Value Props & Worldly Highlights - Mobile Optimized */}
+          <section className="py-16 md:py-24 bg-white border-t border-slate-100 overflow-hidden">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6">
+              <div className="grid md:grid-cols-2 gap-10 md:gap-16 items-center">
+                <div className="relative max-w-lg mx-auto md:max-w-none w-full">
                   <img
                     src="https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&w=1200&auto=format&fit=crop"
-                    className="rounded-[3.5rem] shadow-2xl border-4 border-white"
+                    className="rounded-3xl md:rounded-[2.5rem] shadow-xl border-2 md:border-4 border-white object-cover aspect-[4/3] w-full"
                     alt="Eiffel Tower, Paris"
                   />
-                  <div className="absolute -bottom-8 -right-8 bg-gradient-to-tr from-orange-500 to-amber-500 text-white p-8 md:p-10 rounded-[2.5rem] shadow-2xl">
-                    <h5 className="text-3xl font-black leading-tight">
+                  <div className="absolute bottom-3 right-3 md:-bottom-6 md:-right-6 bg-gradient-to-tr from-orange-500 to-amber-500 text-white p-4 sm:p-6 md:p-8 rounded-2xl md:rounded-3xl shadow-xl">
+                    <h5 className="text-xl sm:text-2xl md:text-3xl font-black leading-tight">
                       150+ <br /> Countries <br /> Mapped
                     </h5>
                   </div>
                 </div>
 
-                <div className="space-y-8">
-                  <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-orange-100 text-orange-700 text-[10px] font-black uppercase tracking-widest">
+                <div className="space-y-6 md:space-y-8 mt-2 md:mt-0">
+                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-100 text-orange-700 text-[10px] font-black uppercase tracking-widest">
                     <Sparkles className="w-3.5 h-3.5" /> Hand-Crafted Travel
                   </div>
                   <h2
-                    className="text-4xl md:text-5xl font-black tracking-tight"
+                    className="text-2xl sm:text-3xl md:text-5xl font-black tracking-tight"
                     style={{ color: colors.dark }}
                   >
                     Built for the Modern Global Explorer
                   </h2>
-                  <div className="space-y-6">
+                  <div className="space-y-4 md:space-y-6">
                     {[
                       {
                         icon: (
-                          <ShieldCheck className="w-7 h-7 text-emerald-500" />
+                          <ShieldCheck className="w-6 h-6 text-emerald-500" />
                         ),
                         title: '100% Vetted Local Stops',
                         desc: 'No overcrowded tourist traps. Our scouts curate authentic eateries, quiet viewpoints, and neighborhood secrets.',
                       },
                       {
-                        icon: <Zap className="w-7 h-7 text-amber-500" />,
+                        icon: <Zap className="w-6 h-6 text-amber-500" />,
                         title: 'AI Speed, Human Warmth',
                         desc: 'Customized in seconds to your travel pace, budget, and specific vibe with real booking availability.',
                       },
                       {
-                        icon: <Globe className="w-7 h-7 text-blue-500" />,
+                        icon: <Globe className="w-6 h-6 text-blue-500" />,
                         title: 'Whisk Passport Guarantee',
                         desc: 'One subscription unlocks every destination worldwide, secret itineraries, direct links, and offline routes.',
                       },
                     ].map((item, i) => (
-                      <div key={i} className="flex gap-5">
-                        <div className="bg-slate-50 p-4 rounded-2xl h-fit border border-slate-100">
+                      <div key={i} className="flex gap-4">
+                        <div className="bg-slate-50 p-3 sm:p-3.5 rounded-2xl h-fit border border-slate-100 shrink-0">
                           {item.icon}
                         </div>
                         <div>
                           <h4
-                            className="text-lg font-black uppercase tracking-wider mb-1"
+                            className="text-base sm:text-lg font-black uppercase tracking-wider mb-0.5"
                             style={{ color: colors.dark }}
                           >
                             {item.title}
                           </h4>
-                          <p className="text-slate-500 font-medium text-sm leading-relaxed">
+                          <p className="text-slate-500 font-medium text-xs sm:text-sm leading-relaxed">
                             {item.desc}
                           </p>
                         </div>
@@ -1751,6 +1815,8 @@ export default function App() {
           <ItineraryDisplay
             itinerary={itinerary}
             isSubscribed={isSubscribed}
+            userProfile={userProfile}
+            onOpenAuth={() => setIsAuthModalOpen(true)}
             onRateActivity={() => {}}
             onRateOverall={() => {}}
             onOpenPassport={openPassportModal}
@@ -1909,51 +1975,80 @@ export default function App() {
             </div>
           </div>
 
-          {/* Legal Framework & Anti-Circumvention Navigation */}
-          <div className="flex flex-wrap justify-center items-center gap-4 md:gap-8 text-[11px] font-bold text-slate-400 pb-12 border-b border-white/5 mb-10">
-            <button
-              type="button"
-              onClick={() => openLegalModal('terms')}
-              className="hover:text-amber-400 transition-colors cursor-pointer"
-            >
-              Terms of Service & Anti-Circumvention
-            </button>
-            <span className="hidden md:inline text-slate-600">•</span>
+          {/* Social Channels & Community Links */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pb-12 border-b border-white/10 mb-10">
+            <div className="text-center sm:text-left">
+              <span className="text-xs font-black uppercase tracking-[0.25em] text-orange-400 block mb-1">
+                Join the Expedition
+              </span>
+              <p className="text-xs text-slate-400 font-medium">
+                Follow Whisk on social for daily secret spots, local food maps &amp; scout dispatches.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <a
+                href="https://instagram.com/whisk.travel"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Whisk on Instagram"
+                className="w-10 h-10 rounded-2xl bg-white/5 hover:bg-gradient-to-tr hover:from-amber-500 hover:to-rose-500 hover:text-white text-slate-300 border border-white/10 flex items-center justify-center transition-all hover:scale-110 shadow-sm"
+              >
+                <Instagram className="w-5 h-5" />
+              </a>
+              <a
+                href="https://www.tiktok.com/@whisk.travel"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Whisk on TikTok"
+                className="w-10 h-10 rounded-2xl bg-white/5 hover:bg-slate-900 hover:text-white text-slate-300 border border-white/10 flex items-center justify-center transition-all hover:scale-110 shadow-sm"
+              >
+                {/* TikTok SVG Icon */}
+                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                  <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.24 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z" />
+                </svg>
+              </a>
+              <a
+                href="https://x.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Whisk on X"
+                className="w-10 h-10 rounded-2xl bg-white/5 hover:bg-slate-900 hover:text-white text-slate-300 border border-white/10 flex items-center justify-center transition-all hover:scale-110 shadow-sm"
+              >
+                <Twitter className="w-5 h-5" />
+              </a>
+              <a
+                href="https://youtube.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Whisk on YouTube"
+                className="w-10 h-10 rounded-2xl bg-white/5 hover:bg-red-600 hover:text-white text-slate-300 border border-white/10 flex items-center justify-center transition-all hover:scale-110 shadow-sm"
+              >
+                <Youtube className="w-5 h-5" />
+              </a>
+            </div>
+          </div>
+
+          {/* Consolidated Legal Framework */}
+          <div className="flex flex-wrap justify-center items-center gap-4 text-xs font-bold text-slate-400 pb-10 border-b border-white/5 mb-8">
             <button
               type="button"
               onClick={() => openLegalModal('privacy')}
-              className="hover:text-amber-400 transition-colors cursor-pointer"
+              className="hover:text-amber-400 transition-colors cursor-pointer underline underline-offset-4"
             >
-              Privacy Policy (GDPR / CCPA)
+              Privacy Policy &amp; Terms of Service
             </button>
-            <span className="hidden md:inline text-slate-600">•</span>
-            <button
-              type="button"
-              onClick={() => openLegalModal('subscription')}
-              className="hover:text-amber-400 transition-colors cursor-pointer"
-            >
-              Subscription & Refunds (FTC Click-to-Cancel)
-            </button>
-            <span className="hidden md:inline text-slate-600">•</span>
-            <button
-              type="button"
-              onClick={() => openLegalModal('affiliate')}
-              className="hover:text-amber-400 transition-colors cursor-pointer"
-            >
-              FTC Affiliate & AI Disclaimers
-            </button>
+            <span className="text-slate-600">•</span>
+            <span>Coleman &amp; Co Holdings LLC dba Whisk</span>
           </div>
 
           <div className="flex flex-col md:flex-row justify-between items-center text-xs text-slate-400 font-semibold gap-4">
             <p>
-              © 2026 Whisk Technologies Inc. Bespoke itineraries, worldwide.
-              Technological measures protected under 17 U.S.C. § 1201 (DMCA) and
-              CFAA.
+              © 2026 Coleman &amp; Co Holdings LLC dba Whisk. Dallas, Texas. All rights reserved.
             </p>
             <div className="flex items-center gap-2">
               <Shield className="w-4 h-4 text-emerald-400" />
               <span>
-                Certified Scout Network • 256-bit Encryption • FTC Compliant
+                256-bit SSL Encryption • Dallas, TX
               </span>
             </div>
           </div>
