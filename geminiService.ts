@@ -53,10 +53,13 @@ const wrapAffiliateLink = (
   type: string
 ): string => {
   const partnerId = getAffiliateId(type);
+  const refTag =
+    (typeof process !== 'undefined' ? process.env?.AFFILIATE_REF : undefined) ||
+    'whisk';
   try {
     const urlObj = new URL(url);
     urlObj.searchParams.set('marker', partnerId);
-    urlObj.searchParams.set('ref', 'whisk');
+    urlObj.searchParams.set('ref', refTag);
     urlObj.searchParams.set('utm_source', 'whisk_direct');
     urlObj.searchParams.set('utm_medium', 'itinerary_app');
     urlObj.searchParams.set(

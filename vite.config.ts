@@ -14,6 +14,9 @@ export default defineConfig(({ mode }) => {
       'process.env.VITE_GEMINI_API_KEY': JSON.stringify(
         env.VITE_GEMINI_API_KEY
       ),
+      'process.env.AFFILIATE_REF': JSON.stringify(
+        env.AFFILIATE_REF || env.VITE_AFFILIATE_REF || 'whisk'
+      ),
       'process.env.AFFILIATE_PARTNER_ID': JSON.stringify(
         env.AFFILIATE_PARTNER_ID || env.VITE_AFFILIATE_PARTNER_ID || '809946'
       ),
