@@ -1,5 +1,5 @@
 import path from 'path';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 const disableViteClientWsPlugin = () => ({
@@ -17,29 +17,37 @@ const disableViteClientWsPlugin = () => ({
   },
 });
 
-export default defineConfig({
-  server: {
-    port: 3000,
-    host: '0.0.0.0',
-    hmr: false,
-    ws: false,
-  },
-  plugins: [react(), disableViteClientWsPlugin()],
-  build: {
-    chunkSizeWarningLimit: 800,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
-          'firebase-vendor': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
-          'ui-vendor': ['lucide-react', '@vis.gl/react-google-maps'],
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, '.', '');
+  return {
+    define: {
+      'process.env.VITE_FIREBASE_API_KEY': JSON.stringify(
+        env.VITE_FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || ''
+      ),
+    },
+    server: {
+      port: 3000,
+      host: '0.0.0.0',
+      hmr: false,
+      ws: false,
+    },
+    plugins: [react(), disableViteClientWsPlugin()],
+    build: {
+      chunkSizeWarningLimit: 800,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'react-vendor': ['react', 'react-dom'],
+            'firebase-vendor': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+            'ui-vendor': ['lucide-react', '@vis.gl/react-google-maps'],
+          },
         },
       },
     },
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, '.'),
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, '.'),
+      },
     },
-  },
+  };
 });

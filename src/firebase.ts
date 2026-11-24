@@ -1,7 +1,20 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, OAuthProvider } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
+import rawFirebaseConfig from '../firebase-applet-config.json';
+
+const activeApiKey =
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_FIREBASE_API_KEY) ||
+  (typeof process !== 'undefined' && process.env?.VITE_FIREBASE_API_KEY) ||
+  (typeof process !== 'undefined' && process.env?.FIREBASE_API_KEY) ||
+  (typeof process !== 'undefined' && process.env?.VITE_GEMINI_API_KEY) ||
+  rawFirebaseConfig.apiKey ||
+  '';
+
+const firebaseConfig = {
+  ...rawFirebaseConfig,
+  apiKey: activeApiKey,
+};
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);

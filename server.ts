@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
@@ -29,6 +30,26 @@ const PORT = Number(process.env.PORT) || 3000;
 const app = express();
 
 app.use(express.json({ limit: '10mb' }));
+
+// Apply rate limiting across all API and authentication endpoints
+export const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+});
+
+export const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts, please try again later.' },
+});
+
+app.use('/api/', apiLimiter);
+app.use('/api/auth/', authLimiter);
 
 // Lazy-initialized Gemini client utility on the server with telemetry User-Agent header
 let aiClient: GoogleGenAI | null = null;
@@ -204,6 +225,19 @@ function findNearestAirportByCoords(latitude: number, longitude: number) {
   };
 }
 
+const isMatchingHost = (url: URL, domain: string): boolean => {
+  return url.hostname === domain || url.hostname.endsWith('.' + domain);
+};
+
+const isExampleUrl = (raw: string): boolean => {
+  try {
+    const parsed = new URL(raw.startsWith('http') ? raw : `https://${raw}`);
+    return parsed.hostname === 'example.com' || parsed.hostname.endsWith('.example.com');
+  } catch {
+    return false;
+  }
+};
+
 const wrapAffiliateLink = (
   url: string,
   destination: string,
@@ -232,7 +266,7 @@ const wrapAffiliateLink = (
     !targetUrl ||
     targetUrl === 'https://google.com' ||
     targetUrl === 'http://google.com' ||
-    targetUrl.includes('example.com');
+    isExampleUrl(targetUrl);
 
   if (type === 'flight') {
     const origin = (options?.departureAirport || '').trim();
@@ -256,7 +290,7 @@ const wrapAffiliateLink = (
 
   try {
     const urlObj = new URL(targetUrl.startsWith('http') ? targetUrl : `https://${targetUrl}`);
-    if (type === 'hotel' && urlObj.hostname.includes('booking.com')) {
+    if (type === 'hotel' && isMatchingHost(urlObj, 'booking.com')) {
       if (validStart && !urlObj.searchParams.has('checkin')) urlObj.searchParams.set('checkin', validStart);
       if (validEnd && !urlObj.searchParams.has('checkout')) urlObj.searchParams.set('checkout', validEnd);
     }
@@ -264,9 +298,9 @@ const wrapAffiliateLink = (
       urlObj.searchParams.set('ref', ref);
     }
     if (typePartnerId) {
-      if (urlObj.hostname.includes('booking.com')) {
+      if (isMatchingHost(urlObj, 'booking.com')) {
         urlObj.searchParams.set('aid', typePartnerId);
-      } else if (urlObj.hostname.includes('viator.com')) {
+      } else if (isMatchingHost(urlObj, 'viator.com')) {
         urlObj.searchParams.set('pid', typePartnerId);
       } else {
         urlObj.searchParams.set('partner_id', typePartnerId);
@@ -467,7 +501,7 @@ app.post('/api/location/nearest-airport', (req, res) => {
 
 // Resolve non-PII @username -> Firebase Auth login email via Firebase Admin
 const USERNAME_REGEX = /^[a-z0-9][a-z0-9_-]{1,22}[a-z0-9]$/;
-app.post('/api/auth/resolve-username', async (req, res) => {
+app.post('/api/auth/resolve-username', authLimiter, async (req, res) => {
   try {
     const raw = typeof req.body?.username === 'string' ? req.body.username : '';
     const username = raw.trim().toLowerCase().replace(/^@+/, '');
@@ -553,7 +587,7 @@ app.get('/api/legal', (_req, res) => {
   });
 });
 
-app.get('/api/legal/consent', requireAuth, async (req: AuthRequest, res) => {
+app.get('/api/legal/consent', apiLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.user!.uid;
     const snap = await adminDb.collection('users').doc(uid).get();
@@ -587,7 +621,7 @@ app.get('/api/legal/consent', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-app.post('/api/legal/consent', requireAuth, async (req: AuthRequest, res) => {
+app.post('/api/legal/consent', apiLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.user!.uid;
     const body = req.body || {};
@@ -1317,13 +1351,11 @@ function extractCentroidCoordinates(itinerary: any): { latitude: number; longitu
 }
 
 function toSeoSlug(input: string): string {
-  return (
-    input
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 90) || `travel-guide-${Date.now()}`
-  );
+  if (typeof input !== 'string') return `travel-guide-${Date.now()}`;
+  let slug = input.toLowerCase().slice(0, 90).replace(/[^a-z0-9]+/g, '-');
+  while (slug.startsWith('-')) slug = slug.slice(1);
+  while (slug.endsWith('-')) slug = slug.slice(0, -1);
+  return slug || `travel-guide-${Date.now()}`;
 }
 
 // Generate Public Editorial Destination Guide (edited search intel + 1-3 suggested spots, keeping all itinerary data & methodology private)
@@ -1662,7 +1694,7 @@ app.post(['/api/gemini/generate', '/api/generate'], async (req, res) => {
 });
 
 // --- Authenticated Cloud SQL Trip Toolkit Routes ---
-app.post('/api/sql/users/sync', requireAuth, async (req: AuthRequest, res) => {
+app.post('/api/sql/users/sync', apiLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.user!.uid;
     const email = req.user!.email || `${uid}@users.local`;
@@ -1675,7 +1707,7 @@ app.post('/api/sql/users/sync', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-app.get('/api/sql/trips/:itineraryId/toolkit', requireAuth, async (req: AuthRequest, res) => {
+app.get('/api/sql/trips/:itineraryId/toolkit', apiLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.user!.uid;
     const itineraryId = String(req.params.itineraryId || '').trim();
@@ -1693,7 +1725,7 @@ app.get('/api/sql/trips/:itineraryId/toolkit', requireAuth, async (req: AuthRequ
   }
 });
 
-app.post('/api/sql/trips/:itineraryId/packing', requireAuth, async (req: AuthRequest, res) => {
+app.post('/api/sql/trips/:itineraryId/packing', apiLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.user!.uid;
     const email = req.user!.email || `${uid}@users.local`;
@@ -1716,7 +1748,7 @@ app.post('/api/sql/trips/:itineraryId/packing', requireAuth, async (req: AuthReq
   }
 });
 
-app.patch('/api/sql/packing/:id', requireAuth, async (req: AuthRequest, res) => {
+app.patch('/api/sql/packing/:id', apiLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.user!.uid;
     const itemId = Number(req.params.id);
@@ -1734,7 +1766,7 @@ app.patch('/api/sql/packing/:id', requireAuth, async (req: AuthRequest, res) => 
   }
 });
 
-app.delete('/api/sql/packing/:id', requireAuth, async (req: AuthRequest, res) => {
+app.delete('/api/sql/packing/:id', apiLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.user!.uid;
     const itemId = Number(req.params.id);
@@ -1752,7 +1784,7 @@ app.delete('/api/sql/packing/:id', requireAuth, async (req: AuthRequest, res) =>
   }
 });
 
-app.post('/api/sql/trips/:itineraryId/notes', requireAuth, async (req: AuthRequest, res) => {
+app.post('/api/sql/trips/:itineraryId/notes', apiLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.user!.uid;
     const email = req.user!.email || `${uid}@users.local`;
@@ -1776,7 +1808,7 @@ app.post('/api/sql/trips/:itineraryId/notes', requireAuth, async (req: AuthReque
   }
 });
 
-app.delete('/api/sql/notes/:id', requireAuth, async (req: AuthRequest, res) => {
+app.delete('/api/sql/notes/:id', apiLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
     const uid = req.user!.uid;
     const noteId = Number(req.params.id);
