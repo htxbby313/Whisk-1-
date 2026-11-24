@@ -1,0 +1,33 @@
+# Dependabot configuration for Whisk
+# Monitors dependencies in root (Vite/React) and functions/ (Firebase Cloud Functions)
+version: 2
+updates:
+  # 1. Main Application Dependencies (Vite, React, Firebase Client, Google Gen AI)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Chicago"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+
+  # 2. Firebase Cloud Functions Dependencies
+  - package-ecosystem: "npm"
+    directory: "/functions"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Chicago"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps-functions)"
+
+  # 3. GitHub Actions CI/CD workflows (if configured)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
