@@ -13,6 +13,37 @@ const apiKey =
   '';
 const ai = new GoogleGenAI({ apiKey });
 
+const getAffiliateId = (type: string): string => {
+  const envPartner =
+    typeof process !== 'undefined' ? process.env?.AFFILIATE_PARTNER_ID : undefined;
+  const envHotels =
+    typeof process !== 'undefined' ? process.env?.AFFILIATE_HOTELS_ID : undefined;
+  const envFlights =
+    typeof process !== 'undefined' ? process.env?.AFFILIATE_FLIGHTS_ID : undefined;
+  const envTours =
+    typeof process !== 'undefined' ? process.env?.AFFILIATE_TOURS_ID : undefined;
+  const envDining =
+    typeof process !== 'undefined' ? process.env?.AFFILIATE_DINING_ID : undefined;
+
+  switch (type.toLowerCase()) {
+    case 'hotel':
+    case 'stay':
+    case 'lodging':
+      return envHotels || envPartner || '809946';
+    case 'flight':
+    case 'transport':
+      return envFlights || envPartner || '809946';
+    case 'tour':
+    case 'activity':
+      return envTours || envPartner || '809946';
+    case 'restaurant':
+    case 'dining':
+      return envDining || envPartner || 'whisk';
+    default:
+      return envPartner || '809946';
+  }
+};
+
 /**
  * Appends tracking parameters to affiliate URLs.
  */
@@ -21,20 +52,22 @@ const wrapAffiliateLink = (
   destination: string,
   type: string
 ): string => {
+  const partnerId = getAffiliateId(type);
   try {
     const urlObj = new URL(url);
-    urlObj.searchParams.append('ref', 'whisk');
-    urlObj.searchParams.append('utm_source', 'whisk_direct');
-    urlObj.searchParams.append('utm_medium', 'itinerary_app');
-    urlObj.searchParams.append(
+    urlObj.searchParams.set('marker', partnerId);
+    urlObj.searchParams.set('ref', 'whisk');
+    urlObj.searchParams.set('utm_source', 'whisk_direct');
+    urlObj.searchParams.set('utm_medium', 'itinerary_app');
+    urlObj.searchParams.set(
       'dest',
       destination.toLowerCase().replace(/\s+/g, '_')
     );
-    urlObj.searchParams.append('category', type);
+    urlObj.searchParams.set('category', type);
     return urlObj.toString();
   } catch {
     const separator = url.includes('?') ? '&' : '?';
-    return `${url}${separator}ref=whisk&dest=${encodeURIComponent(destination)}&category=${type}`;
+    return `${url}${separator}marker=${partnerId}&ref=whisk&dest=${encodeURIComponent(destination)}&category=${type}`;
   }
 };
 
