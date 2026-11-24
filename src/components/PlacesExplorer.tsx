@@ -9,7 +9,7 @@ import {
   Search,
 } from 'lucide-react';
 import { searchMapsPlaces } from '../../geminiService';
-import { GroundingSource } from '../../types';
+import { DiscoveredSpot, GroundingSource } from '../../types';
 
 interface PlacesExplorerProps {
   defaultDestination?: string;
@@ -21,12 +21,14 @@ interface PlacesExplorerProps {
     description: string;
     mapsUri?: string;
   }) => Promise<void>;
+  onSpotsDiscovered?: (spots: DiscoveredSpot[]) => void | Promise<void>;
 }
 
 export const PlacesExplorer: React.FC<PlacesExplorerProps> = ({
   defaultDestination = '',
   savedPlaceNames,
   onSavePlace,
+  onSpotsDiscovered,
 }) => {
   const [destination, setDestination] = React.useState(defaultDestination);
   const [query, setQuery] = React.useState('');
@@ -36,6 +38,7 @@ export const PlacesExplorer: React.FC<PlacesExplorerProps> = ({
   const [sources, setSources] = React.useState<GroundingSource[]>([]);
   const [coords, setCoords] = React.useState<{ latitude: number; longitude: number } | undefined>();
   const [usingGps, setUsingGps] = React.useState(false);
+  const [rememberedCount, setRememberedCount] = React.useState(0);
 
   React.useEffect(() => {
     if (defaultDestination) {
@@ -71,6 +74,7 @@ export const PlacesExplorer: React.FC<PlacesExplorerProps> = ({
     if (!query.trim() && !destination.trim()) return;
     setLoading(true);
     setError(null);
+    setRememberedCount(0);
     try {
       const res = await searchMapsPlaces({
         query: query.trim() || 'Best restaurants, boutique hotels, and hidden gems',
@@ -78,8 +82,20 @@ export const PlacesExplorer: React.FC<PlacesExplorerProps> = ({
         latitude: usingGps ? coords?.latitude : undefined,
         longitude: usingGps ? coords?.longitude : undefined,
       });
+      const foundSources = res.sources || [];
       setResultText(res.text);
-      setSources(res.sources || []);
+      setSources(foundSources);
+
+      const discovered: DiscoveredSpot[] = foundSources.slice(0, 4).map((src) => ({
+        name: src.title,
+        destination: destination.trim() || query.trim() || 'Explore',
+        description: src.snippet || `Verified spot in ${destination.trim() || 'Explore'}`,
+        mapsUri: src.uri,
+      }));
+      if (discovered.length > 0 && onSpotsDiscovered) {
+        await onSpotsDiscovered(discovered);
+        setRememberedCount(discovered.length);
+      }
     } catch (err: any) {
       setError(err?.message || 'Unable to fetch Google Maps places right now.');
     } finally {
@@ -92,11 +108,14 @@ export const PlacesExplorer: React.FC<PlacesExplorerProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-2 bg-orange-50 text-[var(--whisk-orange)] px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest mb-2">
-            <MapPin className="w-3.5 h-3.5" /> Live Google Maps Explorer
+            <MapPin className="w-3.5 h-3.5" /> Free Spot Finder
           </div>
           <h3 className="text-2xl md:text-3xl font-black text-[var(--whisk-navy)] tracking-tight">
             Find Verified Real-World Spots
           </h3>
+          <p className="text-xs font-medium text-slate-500 mt-1">
+            Free on the homepage — Whisk saves spots you explore here to personalize your future trips.
+          </p>
         </div>
         <button
           type="button"
@@ -145,8 +164,16 @@ export const PlacesExplorer: React.FC<PlacesExplorerProps> = ({
 
       {sources.length > 0 && (
         <div className="space-y-3">
-          <div className="text-[11px] font-black uppercase tracking-widest text-slate-400">
-            Verified Google Maps Places ({sources.length})
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[11px] font-black uppercase tracking-widest text-slate-400">
+              Verified Google Maps Places ({sources.length})
+            </div>
+            {rememberedCount > 0 && (
+              <div className="text-[11px] font-bold text-emerald-700 flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" />
+                Saved {rememberedCount} spot{rememberedCount === 1 ? '' : 's'} for your future itineraries
+              </div>
+            )}
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
             {sources.map((src, idx) => {

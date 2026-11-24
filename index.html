@@ -12,6 +12,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Whisk – Travel Itineraries & Local Field Guides" />
     <meta name="twitter:description" content="Build grounded custom itineraries in seconds and discover verified local travel field guides with Whisk." />
+    <link rel="icon" type="image/svg+xml" href="/whisk-logo.svg" />
     <link id="whisk-canonical" rel="canonical" />
     <script id="whisk-jsonld" type="application/ld+json">
       {
@@ -34,18 +35,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Caveat:wght@600&display=swap" rel="stylesheet">
     <style>
         :root {
-            /* Brand – Vibrant Electric World Palette */
-            --whisk-terracotta: #FF3B30;
-            --whisk-saffron: #FFCC00;
-            --whisk-azure: #00B4FF;
-            --whisk-emerald: #00E676;
-            --whisk-fuchsia: #FF1CF7;
+            /* Brand – Vibrant Colors from Around the World */
+            --whisk-terracotta: #FF3B30;  /* Marrakech Terracotta Red */
+            --whisk-saffron: #FFC300;     /* Jaipur Saffron Gold */
+            --whisk-emerald: #00D97E;     /* Bali Rainforest Emerald */
+            --whisk-azure: #00B4FF;       /* Santorini Aegean Azure */
+            --whisk-fuchsia: #FF1CF7;     /* Oaxaca Bougainvillea Fuchsia */
 
-            --whisk-orange: #FF3B30;      /* Electric Coral-Terracotta */
-            --whisk-cyan: #00B4FF;        /* Neon Azure */
-            --whisk-pink: #FF1CF7;        /* Electric Fuchsia */
-            --whisk-purple: #00C853;      /* Bright Neon Emerald */
-            --whisk-navy: #0F172A;        /* Deep Ink Navy for Crisp Contrast */
+            --whisk-orange: #FF4D2E;      /* Amalfi Sunset Coral */
+            --whisk-cyan: #00B4FF;        /* Santorini Azure */
+            --whisk-pink: #FF1CF7;        /* Oaxaca Bougainvillea */
+            --whisk-purple: #00C86B;      /* Patagonia Emerald */
+            --whisk-navy: #0F172A;        /* Deep Midnight Ink */
 
             /* Neutrals */
             --whisk-white: #FFFFFF;
@@ -70,9 +71,9 @@
             --action-disabled: #CBD5E1;
 
             /* Glows & Shadows */
-            --shadow-orange: 0 14px 36px -8px rgba(255, 59, 48, 0.55);
-            --shadow-cyan: 0 14px 36px -8px rgba(0, 180, 255, 0.5);
-            --focus-ring: rgba(0, 180, 255, 0.4);
+            --shadow-orange: 0 14px 36px -6px rgba(255, 59, 48, 0.55);
+            --shadow-cyan: 0 14px 36px -6px rgba(0, 180, 255, 0.52);
+            --focus-ring: rgba(0, 180, 255, 0.45);
         }
 
         body {
@@ -90,19 +91,20 @@
             border: 1px solid rgba(255, 255, 255, 0.6);
         }
         .vibrant-gradient {
-            background: linear-gradient(135deg, #FF3B30 0%, #FF1CF7 100%);
+            background: linear-gradient(135deg, #FF3B30 0%, #FF6B2B 35%, #FF1CF7 100%);
         }
         .cyan-gradient {
-            background: linear-gradient(135deg, #00B4FF 0%, #00E676 100%);
+            background: linear-gradient(135deg, #00A8FF 0%, #00D97E 100%);
         }
         .saffron-gradient {
-            background: linear-gradient(135deg, #FFCC00 0%, #FF3B30 100%);
+            background: linear-gradient(135deg, #FFC300 0%, #FF4D2E 100%);
         }
         .whisk-ombre-bg {
-            background: linear-gradient(135deg, #FF4D4D 0%, #FFD000 26%, #00E676 52%, #00B8FF 76%, #FF2EFF 100%);
+            background: linear-gradient(135deg, #FF3B30 0%, #FFC300 24%, #00D97E 48%, #00B4FF 74%, #FF1CF7 100%);
+            background-attachment: fixed;
         }
         .whisk-text-ombre {
-            background: linear-gradient(135deg, #FF3B30 0%, #FFB800 28%, #00C853 54%, #00B4FF 78%, #FF1CF7 100%);
+            background: linear-gradient(135deg, #FF3B30 0%, #FFAE00 26%, #00C86B 52%, #00A8FF 76%, #FF1CF7 100%);
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;

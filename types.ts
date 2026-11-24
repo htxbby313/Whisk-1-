@@ -2,6 +2,8 @@ export interface Activity {
   time: string;
   description: string;
   location: string;
+  insiderTip?: string;
+  mapsUri?: string;
   latitude?: number;
   longitude?: number;
   formattedAddress?: string;
@@ -12,6 +14,7 @@ export interface Activity {
 
 export interface DayPlan {
   dayNumber: number;
+  date?: string;
   theme: string;
   activities: Activity[];
 }
@@ -23,6 +26,8 @@ export interface Recommendation {
   affiliateUrl: string;
   price?: string;
   availability?: string;
+  dayNumbers?: number[];
+  departureAirport?: string;
   latitude?: number;
   longitude?: number;
 }
@@ -46,6 +51,7 @@ export interface GeoCoordinates {
 
 export interface BlogPost {
   id: string;
+  ownerId?: string;
   slug?: string;
   title: string;
   seoTitle?: string;
@@ -59,6 +65,7 @@ export interface BlogPost {
   itineraryId?: string;
   imageUrl: string;
   createdAt: string;
+  updatedAt?: string;
   destination: string;
   isPublished?: boolean;
 }
@@ -68,6 +75,9 @@ export interface TripItinerary {
   ownerId?: string;
   title: string;
   destination: string;
+  departureAirport?: string;
+  startDate?: string;
+  endDate?: string;
   duration: string;
   summary: string;
   days: DayPlan[];
@@ -87,13 +97,26 @@ export interface TripItinerary {
 
 export type MembershipTier = 'Wanderer' | 'Explorer' | 'Cartographer';
 
+export interface DiscoveredSpot {
+  name: string;
+  destination: string;
+  description: string;
+  mapsUri?: string;
+}
+
 export interface SearchParams {
   destination: string;
+  startDate?: string;
+  endDate?: string;
   duration: string;
   interests: string[];
   budget: 'Budget' | 'Mid-range' | 'Luxury';
   pace: 'Relaxed' | 'Moderate' | 'Fast-paced';
   accessibility: string[];
+  departureLocation?: string;
+  departureAirport?: string;
+  publishPublicGuide?: boolean;
+  preferredSpots?: DiscoveredSpot[];
   latitude?: number;
   longitude?: number;
 }
@@ -144,10 +167,28 @@ export interface ChatMessage {
   createdAt?: string;
 }
 
+export type UserRole = 'user' | 'admin';
+
 export interface UserProfile {
   uid: string;
   displayName: string;
   photoURL?: string;
   email?: string;
   membershipTier: MembershipTier;
+  role?: UserRole;
 }
+
+export interface AdminUserRecord {
+  uid: string;
+  displayName: string;
+  username?: string;
+  photoURL?: string;
+  membershipTier: MembershipTier;
+  role: UserRole;
+  legalConsentVersion?: string;
+  legalConsentAcceptedAt?: string;
+  marketingOptIn?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+

@@ -44,15 +44,69 @@ export const searchMapsPlaces = async (params: {
   return response.json();
 };
 
+export interface NearestAirportResult {
+  code: string;
+  name: string;
+  city: string;
+  country: string;
+  distanceKm: number;
+  label: string;
+}
+
+export const findNearestAirport = async (coords: {
+  latitude: number;
+  longitude: number;
+}): Promise<NearestAirportResult> => {
+  const response = await fetch('/api/location/nearest-airport', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(coords),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Airport lookup failed with status ${response.status}`);
+  }
+
+  return response.json();
+};
+
 export const generateBlogPost = async (
   itinerary: TripItinerary
 ): Promise<Omit<BlogPost, 'id' | 'imageUrl' | 'createdAt'>> => {
+  // Send only public-safe destination and search intel—never private itinerary details or personal schedule
+  const publicSearchIntel = (itinerary.groundingSources || [])
+    .slice(0, 8)
+    .map((s) => ({
+      title: s.title,
+      snippet: s.snippet,
+    }));
+
+  const publicSpotHints = (itinerary.recommendations || [])
+    .filter((r) => r.type === 'restaurant' || r.type === 'tour')
+    .slice(0, 4)
+    .map((r) => ({ name: r.name, type: r.type }));
+
+  const firstCoord = itinerary.days
+    ?.flatMap((d) => d.activities || [])
+    .find((a) => typeof a.latitude === 'number' && typeof a.longitude === 'number');
+
   const response = await fetch('/api/gemini/blog-post', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(itinerary),
+    body: JSON.stringify({
+      destination: itinerary.destination,
+      duration: itinerary.duration,
+      searchIntel: publicSearchIntel,
+      spotHints: publicSpotHints,
+      geoCoordinates: firstCoord
+        ? { latitude: firstCoord.latitude, longitude: firstCoord.longitude }
+        : undefined,
+    }),
   });
 
   if (!response.ok) {

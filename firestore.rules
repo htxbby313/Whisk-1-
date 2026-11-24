@@ -22,6 +22,22 @@ service cloud.firestore {
         );
     }
 
+    function isBootstrappedAdmin() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == 'colemanantheus@gmail.com';
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        isBootstrappedAdmin()
+        || (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        )
+      );
+    }
+
     function isOwner(userId) {
       return isVerifiedUser() && request.auth.uid == userId;
     }
@@ -56,13 +72,14 @@ service cloud.firestore {
     // --- Entity Validation Blueprints ---
     function isValidUserProfile(data, userId) {
       return data.keys().hasAll(['uid', 'displayName', 'membershipTier', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['uid', 'displayName', 'username', 'photoURL', 'membershipTier', 'legalConsentVersion', 'legalConsentAcceptedAt', 'marketingOptIn', 'createdAt', 'updatedAt'])
-        && data.uid is string && data.uid == userId && data.uid == request.auth.uid && isValidId(data.uid)
+        && data.keys().hasOnly(['uid', 'displayName', 'username', 'photoURL', 'membershipTier', 'role', 'legalConsentVersion', 'legalConsentAcceptedAt', 'marketingOptIn', 'createdAt', 'updatedAt'])
+        && data.uid is string && data.uid == userId && isValidId(data.uid)
         && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100
         && (!( 'username' in data ) || isValidUsername(data.username))
         && isValidOptionalString(data, 'photoURL', 500)
         && data.membershipTier is string && data.membershipTier.size() <= 30
         && data.membershipTier in ['Wanderer', 'Explorer', 'Cartographer']
+        && (!( 'role' in data ) || (data.role is string && data.role.size() <= 20 && data.role in ['user', 'admin']))
         && isValidOptionalString(data, 'legalConsentVersion', 30)
         && (!( 'legalConsentAcceptedAt' in data ) || data.legalConsentAcceptedAt is timestamp)
         && (!( 'marketingOptIn' in data ) || data.marketingOptIn is bool)
@@ -82,6 +99,12 @@ service cloud.firestore {
       return !isValidUserProfile(existing(), userId)
         && isValidUserProfile(incoming(), userId)
         && (!('uid' in existing()) || incoming().uid == existing().uid)
+        && (
+          !('role' in incoming())
+          || (('role' in existing()) && existing().role in ['user', 'admin'] && incoming().role == existing().role)
+          || incoming().role == 'user'
+          || (incoming().role == 'admin' && isBootstrappedAdmin())
+        )
         && (
           (('createdAt' in existing()) && existing().createdAt is timestamp && incoming().createdAt == existing().createdAt)
           || ((!('createdAt' in existing()) || !(existing().createdAt is timestamp)) && incoming().createdAt == request.time)
@@ -141,10 +164,13 @@ service cloud.firestore {
 
     function isValidItinerary(data) {
       return data.keys().hasAll(['ownerId', 'title', 'destination', 'duration', 'summary', 'days', 'recommendations', 'unlocked', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['ownerId', 'title', 'destination', 'duration', 'summary', 'budget', 'pace', 'interests', 'accessibility', 'days', 'recommendations', 'groundingSources', 'mapsOverview', 'blogPost', 'unlocked', 'overallRating', 'createdAt', 'updatedAt'])
-        && data.ownerId is string && data.ownerId == request.auth.uid && isValidId(data.ownerId)
+        && data.keys().hasOnly(['ownerId', 'title', 'destination', 'departureAirport', 'startDate', 'endDate', 'duration', 'summary', 'budget', 'pace', 'interests', 'accessibility', 'days', 'recommendations', 'groundingSources', 'mapsOverview', 'blogPost', 'unlocked', 'overallRating', 'createdAt', 'updatedAt'])
+        && data.ownerId is string && isValidId(data.ownerId)
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
         && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 150
+        && isValidOptionalString(data, 'departureAirport', 120)
+        && isValidOptionalString(data, 'startDate', 20)
+        && isValidOptionalString(data, 'endDate', 20)
         && data.duration is string && data.duration.size() >= 1 && data.duration.size() <= 50
         && data.summary is string && data.summary.size() <= 3000
         && isValidOptionalString(data, 'budget', 50)
@@ -169,7 +195,7 @@ service cloud.firestore {
     function isValidPublishedGuide(data) {
       return data.keys().hasAll(['ownerId', 'itineraryId', 'title', 'metaDescription', 'content', 'destination', 'imageUrl', 'keywords', 'isPublished', 'createdAt', 'updatedAt'])
         && data.keys().hasOnly(['ownerId', 'itineraryId', 'slug', 'title', 'seoTitle', 'metaDescription', 'geoSummary', 'content', 'destination', 'imageUrl', 'keywords', 'neighborhoods', 'faqs', 'geoCoordinates', 'isPublished', 'createdAt', 'updatedAt'])
-        && data.ownerId is string && data.ownerId == request.auth.uid && isValidId(data.ownerId)
+        && data.ownerId is string && isValidId(data.ownerId)
         && data.itineraryId is string && isValidId(data.itineraryId)
         && isValidOptionalString(data, 'slug', 180)
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
@@ -186,20 +212,26 @@ service cloud.firestore {
         && isValidBoundedList(data, 'faqs', 10)
         && (!( 'faqs' in data ) || data.faqs.size() == 0 || data.faqs[0] is map)
         && (!( 'geoCoordinates' in data ) || data.geoCoordinates is map)
-        && data.isPublished is bool && data.isPublished == true
+        && data.isPublished is bool
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
 
     // --- Collection Rules ---
 
-    // User Profile (Public-safe metadata, owner-only)
+    // User Profile (Public-safe metadata, owner + admin RBAC)
     match /users/{userId} {
-      allow get: if isValidId(userId) && isOwner(userId);
-      allow list: if false;
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
       allow create: if isValidId(userId)
         && isOwner(userId)
         && isValidUserProfile(incoming(), userId)
+        && incoming().uid == request.auth.uid
+        && (
+          !('role' in incoming())
+          || incoming().role == 'user'
+          || (incoming().role == 'admin' && isBootstrappedAdmin())
+        )
         && ('legalConsentVersion' in incoming())
         && incoming().legalConsentVersion.size() >= 1
         && ('legalConsentAcceptedAt' in incoming())
@@ -209,25 +241,37 @@ service cloud.firestore {
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
       allow update: if isValidId(userId)
-        && isOwner(userId)
         && isValidUserProfile(incoming(), userId)
         && incoming().updatedAt == request.time
         && (!incoming().diff(existing()).affectedKeys().hasAny(['legalConsentAcceptedAt']) || incoming().legalConsentAcceptedAt == request.time)
         && (
           (
-            isValidUserProfile(existing(), userId)
+            isOwner(userId)
+            && isValidUserProfile(existing(), userId)
             && incoming().uid == existing().uid
             && incoming().createdAt == existing().createdAt
             && (
               incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'username', 'photoURL', 'legalConsentVersion', 'legalConsentAcceptedAt', 'marketingOptIn', 'updatedAt'])
               || incoming().diff(existing()).affectedKeys().hasOnly(['membershipTier', 'updatedAt'])
+              || (
+                isBootstrappedAdmin()
+                && incoming().role == 'admin'
+                && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'username', 'photoURL', 'role', 'legalConsentVersion', 'legalConsentAcceptedAt', 'marketingOptIn', 'updatedAt'])
+              )
             )
           )
-          || isLegacyUserMigration(userId)
+          || (
+            isAdmin()
+            && isValidUserProfile(existing(), userId)
+            && incoming().uid == existing().uid
+            && incoming().createdAt == existing().createdAt
+            && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'membershipTier', 'displayName', 'updatedAt'])
+          )
+          || (isOwner(userId) && isLegacyUserMigration(userId))
         );
-      allow delete: if isValidId(userId) && isOwner(userId);
+      allow delete: if isValidId(userId) && (isOwner(userId) || isAdmin());
 
-      // Isolated Private PII
+      // Isolated Private PII (Strictly Owner-Only)
       match /private/{docId} {
         allow get: if isValidId(userId) && isValidId(docId) && docId == 'info' && isOwner(userId);
         allow list: if false;
@@ -310,11 +354,12 @@ service cloud.firestore {
 
     // Saved Travel Itineraries Collection
     match /itineraries/{itineraryId} {
-      allow get: if isValidId(itineraryId) && isVerifiedUser() && (resource == null || existing().ownerId == request.auth.uid);
-      allow list: if isVerifiedUser() && resource.data.ownerId == request.auth.uid;
+      allow get: if isValidId(itineraryId) && isVerifiedUser() && (resource == null || existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isVerifiedUser() && (resource.data.ownerId == request.auth.uid || isAdmin());
       allow create: if isValidId(itineraryId)
         && isVerifiedUser()
         && isValidItinerary(incoming())
+        && incoming().ownerId == request.auth.uid
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && exists(/databases/$(database)/documents/users/$(request.auth.uid));
@@ -331,30 +376,42 @@ service cloud.firestore {
           || incoming().diff(existing()).affectedKeys().hasOnly(['overallRating', 'updatedAt'])
           || incoming().diff(existing()).affectedKeys().hasOnly(['days', 'recommendations', 'groundingSources', 'summary', 'updatedAt'])
         );
-      allow delete: if isValidId(itineraryId) && isVerifiedUser() && existing().ownerId == request.auth.uid;
+      allow delete: if isValidId(itineraryId) && isVerifiedUser() && (existing().ownerId == request.auth.uid || isAdmin());
     }
 
-    // Public SEO & GEO Field Guides Collection (Non-PII organic discovery catalog)
+    // Public SEO & GEO Field Guides Collection (Non-PII organic discovery catalog + Admin moderation)
     match /publishedGuides/{guideId} {
-      allow get: if isValidId(guideId) && resource.data.isPublished == true;
-      allow list: if resource.data.isPublished == true;
+      allow get: if isValidId(guideId) && (resource.data.isPublished == true || isAdmin());
+      allow list: if resource.data.isPublished == true || isAdmin();
       allow create: if isValidId(guideId)
         && isVerifiedUser()
         && isValidPublishedGuide(incoming())
+        && incoming().ownerId == request.auth.uid
+        && (incoming().isPublished == true || isAdmin())
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && exists(/databases/$(database)/documents/users/$(request.auth.uid));
       allow update: if isValidId(guideId)
         && isVerifiedUser()
         && isValidPublishedGuide(incoming())
-        && existing().ownerId == request.auth.uid
         && incoming().ownerId == existing().ownerId
         && incoming().itineraryId == existing().itineraryId
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
-        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'seoTitle', 'slug', 'metaDescription', 'geoSummary', 'content', 'keywords', 'neighborhoods', 'faqs', 'geoCoordinates', 'updatedAt']);
-      allow delete: if isValidId(guideId) && isVerifiedUser() && existing().ownerId == request.auth.uid;
+        && (
+          (
+            existing().ownerId == request.auth.uid
+            && incoming().isPublished == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'seoTitle', 'slug', 'metaDescription', 'geoSummary', 'content', 'keywords', 'neighborhoods', 'faqs', 'geoCoordinates', 'updatedAt'])
+          )
+          || (
+            isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'seoTitle', 'slug', 'metaDescription', 'geoSummary', 'content', 'destination', 'imageUrl', 'keywords', 'neighborhoods', 'faqs', 'geoCoordinates', 'isPublished', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(guideId) && isVerifiedUser() && (existing().ownerId == request.auth.uid || isAdmin());
     }
+
     // Unique lowercase username index (non-PII)
     match /usernames/{usernameId} {
       allow get: if isValidUsername(usernameId);
@@ -365,7 +422,7 @@ service cloud.firestore {
         && incoming().createdAt == request.time
         && !exists(/databases/$(database)/documents/usernames/$(usernameId));
       allow update: if false;
-      allow delete: if isValidUsername(usernameId) && isVerifiedUser() && existing().uid == request.auth.uid;
+      allow delete: if isValidUsername(usernameId) && isVerifiedUser() && (existing().uid == request.auth.uid || isAdmin());
     }
   }
 }

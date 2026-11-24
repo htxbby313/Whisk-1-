@@ -4,6 +4,7 @@ import {
   doc,
   FieldValue,
   getDoc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
@@ -16,12 +17,14 @@ import {
 import { User } from 'firebase/auth';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import {
+  AdminUserRecord,
   BlogPost,
   ChatMessage,
   ChatMode,
   MembershipTier,
   SavedPlace,
   TripItinerary,
+  UserRole,
 } from '../../types';
 
 // --- Defensive Payload Helpers ---
@@ -69,12 +72,22 @@ const toIsoString = (val: unknown): string => {
   return new Date().toISOString();
 };
 
+const BOOTSTRAPPED_ADMIN_EMAIL = 'colemanantheus@gmail.com';
+
+const isBootstrappedAdminUser = (user: User): boolean =>
+  Boolean(
+    user.emailVerified &&
+      typeof user.email === 'string' &&
+      user.email.trim().toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL
+  );
+
 const CANONICAL_USER_KEYS = new Set([
   'uid',
   'displayName',
   'username',
   'photoURL',
   'membershipTier',
+  'role',
   'legalConsentVersion',
   'legalConsentAcceptedAt',
   'marketingOptIn',
@@ -133,10 +146,12 @@ export async function checkUserLegalConsentStatus(user: User): Promise<{
   hasLegalConsent: boolean;
   legalConsentVersion?: string;
   membershipTier: MembershipTier;
+  role: UserRole;
   username?: string;
 }> {
   const userPath = `users/${user.uid}`;
   const userRef = doc(db, 'users', user.uid);
+  const bootstrappedAdmin = isBootstrappedAdminUser(user);
   let snap;
   try {
     snap = await getDoc(userRef);
@@ -149,6 +164,7 @@ export async function checkUserLegalConsentStatus(user: User): Promise<{
       hasProfile: false,
       hasLegalConsent: false,
       membershipTier: 'Wanderer',
+      role: bootstrappedAdmin ? 'admin' : 'user',
     };
   }
 
@@ -157,6 +173,8 @@ export async function checkUserLegalConsentStatus(user: User): Promise<{
     data.membershipTier === 'Explorer' || data.membershipTier === 'Cartographer'
       ? data.membershipTier
       : 'Wanderer';
+  const role: UserRole =
+    data.role === 'admin' || bootstrappedAdmin ? 'admin' : 'user';
   const username =
     typeof data.username === 'string' && USERNAME_PATTERN.test(data.username)
       ? data.username
@@ -174,6 +192,7 @@ export async function checkUserLegalConsentStatus(user: User): Promise<{
     hasLegalConsent,
     legalConsentVersion,
     membershipTier: tier,
+    role,
     username,
   };
 }
@@ -188,6 +207,7 @@ export async function ensureUserProfile(
   }
 ): Promise<{
   membershipTier: MembershipTier;
+  role: UserRole;
   username?: string;
   legalConsentVersion?: string;
 }> {
@@ -239,6 +259,10 @@ export async function ensureUserProfile(
     ? safeStr(overrides.legalConsent.version, 30, '2026-11-17')
     : existingConsentVersion;
 
+  const bootstrappedAdmin = isBootstrappedAdminUser(user);
+  const existingRole: UserRole =
+    existingData.role === 'admin' || bootstrappedAdmin ? 'admin' : 'user';
+
   if (!snap.exists()) {
     if (!overrides?.legalConsent?.version) {
       throw new Error(
@@ -252,6 +276,7 @@ export async function ensureUserProfile(
         username: resolvedUsername || undefined,
         photoURL: photoURL || undefined,
         membershipTier: 'Wanderer' as MembershipTier,
+        role: bootstrappedAdmin ? ('admin' as UserRole) : ('user' as UserRole),
         legalConsentVersion: safeStr(overrides.legalConsent.version, 30, '2026-11-17'),
         legalConsentAcceptedAt: serverTimestamp(),
         marketingOptIn: Boolean(overrides.legalConsent.marketingOptIn),
@@ -281,14 +306,19 @@ export async function ensureUserProfile(
       (existingData.membershipTier === 'Wanderer' ||
         existingData.membershipTier === 'Explorer' ||
         existingData.membershipTier === 'Cartographer') &&
+      (!('role' in existingData) ||
+        existingData.role === 'user' ||
+        existingData.role === 'admin') &&
       existingKeys.every((k) => CANONICAL_USER_KEYS.has(k));
 
     try {
       if (isCanonical) {
+        const shouldBootstrapRole = bootstrappedAdmin && existingData.role !== 'admin';
         const updatePayload = stripUndefined({
           displayName,
           username: resolvedUsername || undefined,
           photoURL: photoURL || undefined,
+          ...(shouldBootstrapRole ? { role: 'admin' as UserRole } : {}),
           ...(overrides?.legalConsent
             ? {
                 legalConsentVersion: safeStr(overrides.legalConsent.version, 30, '2026-11-17'),
@@ -306,6 +336,7 @@ export async function ensureUserProfile(
           username: resolvedUsername || undefined,
           photoURL: photoURL || undefined,
           membershipTier: tier,
+          role: existingRole,
           ...(overrides?.legalConsent
             ? {
                 legalConsentVersion: safeStr(overrides.legalConsent.version, 30, '2026-11-17'),
@@ -351,6 +382,7 @@ export async function ensureUserProfile(
 
   return {
     membershipTier: tier,
+    role: existingRole,
     username: resolvedUsername,
     legalConsentVersion: resolvedConsentVersion,
   };
@@ -388,6 +420,9 @@ export async function saveItineraryToFirestore(
     ownerId: uid,
     title: safeStr(itinerary.title, 200, 'Whisk Trip'),
     destination: safeStr(itinerary.destination, 150, 'Destination'),
+    departureAirport: itinerary.departureAirport ? safeStr(itinerary.departureAirport, 120) : undefined,
+    startDate: itinerary.startDate ? safeStr(itinerary.startDate, 20) : undefined,
+    endDate: itinerary.endDate ? safeStr(itinerary.endDate, 20) : undefined,
     duration: safeStr(itinerary.duration, 50, '3 days'),
     summary: safeStr(itinerary.summary, 3000, ''),
     budget: itinerary.budget ? safeStr(itinerary.budget, 50) : undefined,
@@ -755,4 +790,295 @@ export function subscribePublicGuides(
     }
   );
 }
+
+// --- Admin RBAC Operations (Enforced by firestore.rules isAdmin()) ---
+const isSafeAssetUrl = (raw: string): boolean => {
+  const trimmed = raw.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('/')) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+};
+
+export async function fetchAdminUsers(): Promise<AdminUserRecord[]> {
+  const path = 'users';
+  try {
+    const snap = await getDocs(collection(db, path));
+    const records: AdminUserRecord[] = snap.docs.map((d) => {
+      const data = d.data() || {};
+      const membershipTier: MembershipTier =
+        data.membershipTier === 'Explorer' || data.membershipTier === 'Cartographer'
+          ? data.membershipTier
+          : 'Wanderer';
+      const role: UserRole = data.role === 'admin' ? 'admin' : 'user';
+      return {
+        uid: typeof data.uid === 'string' ? data.uid : d.id,
+        displayName: safeStr(data.displayName, 100, 'Whisk Traveler'),
+        username: typeof data.username === 'string' ? data.username : undefined,
+        photoURL: typeof data.photoURL === 'string' ? data.photoURL : undefined,
+        membershipTier,
+        role,
+        legalConsentVersion:
+          typeof data.legalConsentVersion === 'string' ? data.legalConsentVersion : undefined,
+        legalConsentAcceptedAt: data.legalConsentAcceptedAt
+          ? toIsoString(data.legalConsentAcceptedAt)
+          : undefined,
+        marketingOptIn: Boolean(data.marketingOptIn),
+        createdAt: toIsoString(data.createdAt),
+        updatedAt: toIsoString(data.updatedAt),
+      };
+    });
+    records.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    return records;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function adminUpdateUserRecord(
+  targetUid: string,
+  updates: {
+    role?: UserRole;
+    membershipTier?: MembershipTier;
+    displayName?: string;
+  }
+): Promise<void> {
+  const safeUid = sanitizeId(targetUid);
+  const path = `users/${safeUid}`;
+  const payload: Record<string, any> = {
+    updatedAt: serverTimestamp(),
+  };
+  if (updates.role === 'admin' || updates.role === 'user') {
+    payload.role = updates.role;
+  }
+  if (
+    updates.membershipTier === 'Wanderer' ||
+    updates.membershipTier === 'Explorer' ||
+    updates.membershipTier === 'Cartographer'
+  ) {
+    payload.membershipTier = updates.membershipTier;
+  }
+  if (typeof updates.displayName === 'string' && updates.displayName.trim().length > 0) {
+    payload.displayName = safeStr(updates.displayName, 100, 'Whisk Traveler');
+  }
+  try {
+    await updateDoc(doc(db, 'users', safeUid), payload);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function adminDeleteUserProfile(targetUid: string): Promise<void> {
+  const safeUid = sanitizeId(targetUid);
+  const path = `users/${safeUid}`;
+  try {
+    await deleteDoc(doc(db, 'users', safeUid));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function fetchAdminItineraries(): Promise<TripItinerary[]> {
+  const path = 'itineraries';
+  try {
+    const snap = await getDocs(collection(db, path));
+    const trips: TripItinerary[] = snap.docs.map((d) => {
+      const data = d.data() || {};
+      return {
+        ...(data as Omit<TripItinerary, 'id' | 'createdAt' | 'updatedAt'>),
+        id: d.id,
+        createdAt: toIsoString(data.createdAt),
+        updatedAt: toIsoString(data.updatedAt),
+      };
+    });
+    trips.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    return trips;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function fetchAdminGuides(): Promise<BlogPost[]> {
+  const path = 'publishedGuides';
+  try {
+    const snap = await getDocs(collection(db, path));
+    const posts: BlogPost[] = snap.docs.map((d) => {
+      const data = d.data() || {};
+      return {
+        ...(data as Omit<BlogPost, 'id' | 'createdAt' | 'updatedAt'>),
+        id: d.id,
+        ownerId: typeof data.ownerId === 'string' ? data.ownerId : undefined,
+        isPublished: Boolean(data.isPublished),
+        createdAt: toIsoString(data.createdAt),
+        updatedAt: toIsoString(data.updatedAt),
+      };
+    });
+    posts.sort(
+      (a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
+    );
+    return posts;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export interface AdminGuideDraftInput {
+  id?: string;
+  title: string;
+  seoTitle?: string;
+  slug?: string;
+  destination: string;
+  metaDescription: string;
+  geoSummary?: string;
+  content: string;
+  imageUrl: string;
+  keywords: string[];
+  neighborhoods?: string[];
+  isPublished: boolean;
+}
+
+export async function adminSaveCommunityGuide(
+  adminUid: string,
+  input: AdminGuideDraftInput
+): Promise<BlogPost> {
+  const guideId = sanitizeId(input.id || `guide_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
+  const path = `publishedGuides/${guideId}`;
+  const ref = doc(db, 'publishedGuides', guideId);
+
+  const cleanImageUrl = isSafeAssetUrl(input.imageUrl)
+    ? safeStr(input.imageUrl, 500, '/')
+    : '/';
+  const cleanKeywords = input.keywords
+    .map((k) => safeStr(k, 80))
+    .filter(Boolean)
+    .slice(0, 20);
+  const cleanNeighborhoods = (input.neighborhoods || [])
+    .map((n) => safeStr(n, 80))
+    .filter(Boolean)
+    .slice(0, 15);
+  const cleanSlug = safeStr(
+    (input.slug || input.title || input.destination)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, ''),
+    180,
+    guideId
+  );
+
+  try {
+    const existingSnap = await getDoc(ref);
+    if (existingSnap.exists()) {
+      const existingData = existingSnap.data() || {};
+      const updatePayload = stripUndefined({
+        title: safeStr(input.title, 200, 'Untitled Guide'),
+        seoTitle: input.seoTitle?.trim() ? safeStr(input.seoTitle, 120) : undefined,
+        slug: cleanSlug,
+        destination: safeStr(input.destination, 150, 'Destination'),
+        metaDescription: safeStr(input.metaDescription, 320, 'Curated Whisk travel guide'),
+        geoSummary: input.geoSummary?.trim() ? safeStr(input.geoSummary, 1200) : undefined,
+        content: safeStr(input.content, 20000, input.metaDescription),
+        imageUrl: cleanImageUrl,
+        keywords: cleanKeywords,
+        neighborhoods: cleanNeighborhoods.length > 0 ? cleanNeighborhoods : undefined,
+        isPublished: Boolean(input.isPublished),
+        updatedAt: serverTimestamp(),
+      });
+      await updateDoc(ref, updatePayload);
+      return {
+        id: guideId,
+        ownerId: typeof existingData.ownerId === 'string' ? existingData.ownerId : adminUid,
+        itineraryId: typeof existingData.itineraryId === 'string' ? existingData.itineraryId : undefined,
+        title: updatePayload.title,
+        seoTitle: updatePayload.seoTitle,
+        slug: cleanSlug,
+        destination: updatePayload.destination,
+        metaDescription: updatePayload.metaDescription,
+        geoSummary: updatePayload.geoSummary,
+        content: updatePayload.content,
+        imageUrl: cleanImageUrl,
+        keywords: cleanKeywords,
+        neighborhoods: cleanNeighborhoods,
+        isPublished: Boolean(input.isPublished),
+        createdAt: toIsoString(existingData.createdAt),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    const itineraryId = sanitizeId(`admin_editorial_${Date.now()}`);
+    const createPayload = stripUndefined({
+      ownerId: adminUid,
+      itineraryId,
+      slug: cleanSlug,
+      title: safeStr(input.title, 200, 'Untitled Guide'),
+      seoTitle: input.seoTitle?.trim() ? safeStr(input.seoTitle, 120) : undefined,
+      metaDescription: safeStr(input.metaDescription, 320, 'Curated Whisk travel guide'),
+      geoSummary: input.geoSummary?.trim() ? safeStr(input.geoSummary, 1200) : undefined,
+      content: safeStr(input.content, 20000, input.metaDescription),
+      destination: safeStr(input.destination, 150, 'Destination'),
+      imageUrl: cleanImageUrl,
+      keywords: cleanKeywords,
+      neighborhoods: cleanNeighborhoods.length > 0 ? cleanNeighborhoods : undefined,
+      isPublished: Boolean(input.isPublished),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    await setDoc(ref, createPayload);
+    const nowIso = new Date().toISOString();
+    return {
+      id: guideId,
+      ownerId: adminUid,
+      itineraryId,
+      slug: cleanSlug,
+      title: createPayload.title,
+      seoTitle: createPayload.seoTitle,
+      metaDescription: createPayload.metaDescription,
+      geoSummary: createPayload.geoSummary,
+      content: createPayload.content,
+      destination: createPayload.destination,
+      imageUrl: cleanImageUrl,
+      keywords: cleanKeywords,
+      neighborhoods: cleanNeighborhoods,
+      isPublished: Boolean(input.isPublished),
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function adminToggleGuidePublished(
+  guideId: string,
+  isPublished: boolean
+): Promise<void> {
+  const safeId = sanitizeId(guideId);
+  const path = `publishedGuides/${safeId}`;
+  try {
+    await updateDoc(doc(db, 'publishedGuides', safeId), {
+      isPublished: Boolean(isPublished),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function adminDeleteCommunityGuide(guideId: string): Promise<void> {
+  const safeId = sanitizeId(guideId);
+  const path = `publishedGuides/${safeId}`;
+  try {
+    await deleteDoc(doc(db, 'publishedGuides', safeId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
 

@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <clipPath id="whisk-squircle">
+      <rect x="24" y="24" width="464" height="464" rx="112" />
+    </clipPath>
+    <filter id="whisk-w-shadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#0F172A" flood-opacity="0.28" />
+    </filter>
+    <!-- Santorini Azure & Caribbean Sea Ocean Backdrop -->
+    <linearGradient id="whisk-world-ocean" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0052D4" />
+      <stop offset="42%" stop-color="#00B4FF" />
+      <stop offset="76%" stop-color="#00D97E" />
+      <stop offset="100%" stop-color="#FFC300" />
+    </linearGradient>
+    <!-- Americas: Oaxaca Bougainvillea -> Jaipur Saffron -> Amazon Emerald -->
+    <linearGradient id="whisk-americas" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF1CF7" />
+      <stop offset="48%" stop-color="#FF3B30" />
+      <stop offset="100%" stop-color="#FFC300" />
+    </linearGradient>
+    <!-- South America: Amazon Emerald -> Patagonian Turquoise -->
+    <linearGradient id="whisk-south-america" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E676" />
+      <stop offset="55%" stop-color="#00C86B" />
+      <stop offset="100%" stop-color="#00B4FF" />
+    </linearGradient>
+    <!-- Greenland / Arctic Glow: Saffron Gold -> Coral -->
+    <linearGradient id="whisk-arctic" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FF3B30" />
+      <stop offset="55%" stop-color="#FFC300" />
+      <stop offset="100%" stop-color="#FFE600" />
+    </linearGradient>
+    <!-- Europe, Africa & Asia: Marrakech Terracotta -> Jaipur Marigold -> Holi Fuchsia -->
+    <linearGradient id="whisk-eurasia-africa" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00D97E" />
+      <stop offset="36%" stop-color="#FF1CF7" />
+      <stop offset="70%" stop-color="#FF3B30" />
+      <stop offset="100%" stop-color="#FFC300" />
+    </linearGradient>
+  </defs>
+
+  <g clip-path="url(#whisk-squircle)">
+    <!-- Luminous Aegean & Caribbean Ocean Backdrop -->
+    <rect x="24" y="24" width="464" height="464" fill="url(#whisk-world-ocean)" />
+
+    <!-- World Map Continents colored with vibrant Colors from Around the World -->
+    <!-- North America (Oaxaca Bougainvillea & Terracotta) -->
+    <path
+      d="M20 70 C54 58 104 42 148 56 C132 76 112 96 126 118 C142 134 166 138 158 164 C146 184 114 196 106 226 C116 244 134 252 146 270 C130 286 104 282 88 264 C66 248 48 228 24 218 Z"
+      fill="url(#whisk-americas)"
+    />
+    <!-- Greenland (Amalfi Sun & Terracotta) -->
+    <path
+      d="M150 62 C180 42 224 46 248 64 C236 94 216 124 196 144 C172 136 154 114 146 88 Z"
+      fill="url(#whisk-arctic)"
+    />
+    <!-- South America (Amazon & Bali Emerald) -->
+    <path
+      d="M126 292 C156 286 190 302 206 332 C198 370 176 410 156 446 C144 464 130 472 124 460 C122 430 130 398 118 366 C106 336 106 306 126 292 Z"
+      fill="url(#whisk-south-america)"
+    />
+    <!-- Europe, Africa & Asia (Marrakech Terracotta, Jaipur Gold & Holi Fuchsia) -->
+    <path
+      d="M276 128 C306 104 344 82 396 74 C434 72 468 90 492 120 L492 316 C458 324 434 304 416 280 C406 296 392 312 372 308 C356 336 352 384 328 422 C308 424 294 402 292 376 C284 340 264 318 248 286 C234 252 246 206 274 184 C264 166 264 144 276 128 Z"
+      fill="url(#whisk-eurasia-africa)"
+    />
+
+    <!-- Bold Geometric White W + Soaring White Airplane -->
+    <g filter="url(#whisk-w-shadow)">
+      <path
+        d="M90 198 H152 L182 326 L220 198 H274 L312 326 L336 236 L382 268 L342 404 H280 L246 290 L212 404 H150 L90 198 Z"
+        fill="#FFFFFF"
+      />
+      <g transform="translate(362 184) rotate(-42)">
+        <path
+          d="M84 0 C84 -9 74 -15 58 -15 L14 -15 L-20 -78 C-23 -83 -28 -85 -34 -83 L-44 -80 C-48 -78 -49 -74 -47 -69 L-26 -15 L-56 -15 L-74 -39 C-76 -42 -80 -43 -84 -41 L-90 -38 C-93 -36 -94 -32 -92 -29 L-77 0 L-92 29 C-94 32 -93 36 -90 38 L-84 41 C-80 43 -76 42 -74 39 L-56 15 L-26 15 L-47 69 C-49 74 -48 78 -44 80 L-34 83 C-28 85 -23 83 -20 78 L14 15 L58 15 C74 15 84 9 84 0 Z"
+          fill="#FFFFFF"
+        />
+      </g>
+    </g>
+  </g>
+</svg>

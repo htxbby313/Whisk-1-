@@ -22,7 +22,7 @@ import {
 } from '../services/firestoreService';
 import { recordLegalConsentBackend, syncAuthenticatedAccount } from '../../geminiService';
 import { CURRENT_LEGAL_VERSION } from '../legal/catalog';
-import { MembershipTier } from '../../types';
+import { MembershipTier, UserRole } from '../../types';
 
 export interface SignUpWithEmailParams {
   email: string;
@@ -50,6 +50,9 @@ export interface OAuthConsentParams {
 interface AuthContextValue {
   user: User | null;
   authReady: boolean;
+  roleResolved: boolean;
+  role: UserRole;
+  isAdmin: boolean;
   membershipTier: MembershipTier;
   username: string | null;
   needsLegalConsent: boolean;
@@ -125,6 +128,8 @@ function formatAuthError(err: any, providerContext?: 'google' | 'apple' | 'email
 export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = React.useState<User | null>(null);
   const [authReady, setAuthReady] = React.useState(false);
+  const [roleResolved, setRoleResolved] = React.useState(false);
+  const [role, setRole] = React.useState<UserRole>('user');
   const [membershipTier, setMembershipTier] = React.useState<MembershipTier>('Wanderer');
   const [username, setUsername] = React.useState<string | null>(null);
   const [needsLegalConsent, setNeedsLegalConsent] = React.useState(false);
@@ -149,9 +154,11 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         targetUser.getIdToken(),
       ]);
       setMembershipTier(profile.membershipTier);
+      setRole(profile.role);
       setUsername(profile.username || null);
       setLegalConsentVersion(profile.legalConsentVersion || null);
       setNeedsLegalConsent(false);
+      setRoleResolved(true);
 
       syncAuthenticatedAccount(idToken).catch((syncErr) => {
         console.error('Non-fatal account sync error:', syncErr);
@@ -173,6 +180,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       setUser(currentUser);
       if (currentUser) {
+        setRoleResolved(false);
         try {
           const status = await checkUserLegalConsentStatus(currentUser);
           const preConsent = pendingOAuthConsentRef.current;
@@ -184,18 +192,24 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             await syncUserState(currentUser, { legalConsent: preConsent });
           } else {
             setMembershipTier(status.membershipTier);
+            setRole(status.role);
             setUsername(status.username || null);
             setLegalConsentVersion(null);
             setNeedsLegalConsent(true);
+            setRoleResolved(true);
           }
         } catch (err) {
           console.error('Failed to sync user profile:', err);
+          setRole('user');
+          setRoleResolved(true);
         }
       } else {
         setMembershipTier('Wanderer');
+        setRole('user');
         setUsername(null);
         setLegalConsentVersion(null);
         setNeedsLegalConsent(false);
+        setRoleResolved(true);
       }
       setAuthReady(true);
     });
@@ -526,6 +540,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     pendingOAuthConsentRef.current = null;
     setNeedsLegalConsent(false);
     setLegalConsentVersion(null);
+    setRole('user');
+    setRoleResolved(true);
     await signOut(auth);
   };
 
@@ -533,6 +549,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     pendingOAuthConsentRef.current = null;
     await signOut(auth);
     setMembershipTier('Wanderer');
+    setRole('user');
+    setRoleResolved(true);
     setUsername(null);
     setLegalConsentVersion(null);
     setNeedsLegalConsent(false);
@@ -552,6 +570,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       value={{
         user,
         authReady,
+        roleResolved,
+        role,
+        isAdmin: role === 'admin',
         membershipTier,
         username,
         needsLegalConsent,

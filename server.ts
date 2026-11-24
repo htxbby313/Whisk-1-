@@ -84,15 +84,197 @@ function extractGroundingSources(response: any): GroundingSource[] {
   return sources;
 }
 
-const wrapAffiliateLink = (url: string, destination: string, _type: string): string => {
+const MAJOR_AIRPORTS: Array<{
+  code: string;
+  name: string;
+  city: string;
+  country: string;
+  lat: number;
+  lng: number;
+}> = [
+  { code: 'JFK', name: 'John F. Kennedy International Airport', city: 'New York', country: 'USA', lat: 40.6413, lng: -73.7781 },
+  { code: 'EWR', name: 'Newark Liberty International Airport', city: 'Newark', country: 'USA', lat: 40.6895, lng: -74.1745 },
+  { code: 'BOS', name: 'Boston Logan International Airport', city: 'Boston', country: 'USA', lat: 42.3656, lng: -71.0096 },
+  { code: 'PHL', name: 'Philadelphia International Airport', city: 'Philadelphia', country: 'USA', lat: 39.8744, lng: -75.2424 },
+  { code: 'IAD', name: 'Washington Dulles International Airport', city: 'Washington, D.C.', country: 'USA', lat: 38.9531, lng: -77.4565 },
+  { code: 'ATL', name: 'Hartsfield-Jackson Atlanta International Airport', city: 'Atlanta', country: 'USA', lat: 33.6407, lng: -84.4277 },
+  { code: 'MIA', name: 'Miami International Airport', city: 'Miami', country: 'USA', lat: 25.7959, lng: -80.287 },
+  { code: 'MCO', name: 'Orlando International Airport', city: 'Orlando', country: 'USA', lat: 28.4312, lng: -81.3081 },
+  { code: 'CLT', name: 'Charlotte Douglas International Airport', city: 'Charlotte', country: 'USA', lat: 35.2144, lng: -80.9473 },
+  { code: 'ORD', name: "O'Hare International Airport", city: 'Chicago', country: 'USA', lat: 41.9742, lng: -87.9073 },
+  { code: 'DTW', name: 'Detroit Metropolitan Airport', city: 'Detroit', country: 'USA', lat: 42.2162, lng: -83.3554 },
+  { code: 'MSP', name: 'Minneapolis-Saint Paul International Airport', city: 'Minneapolis', country: 'USA', lat: 44.8848, lng: -93.2223 },
+  { code: 'DFW', name: 'Dallas/Fort Worth International Airport', city: 'Dallas', country: 'USA', lat: 32.8998, lng: -97.0403 },
+  { code: 'IAH', name: 'George Bush Intercontinental Airport', city: 'Houston', country: 'USA', lat: 29.9902, lng: -95.3368 },
+  { code: 'AUS', name: 'Austin-Bergstrom International Airport', city: 'Austin', country: 'USA', lat: 30.1975, lng: -97.6664 },
+  { code: 'MSY', name: 'Louis Armstrong New Orleans International Airport', city: 'New Orleans', country: 'USA', lat: 29.9934, lng: -90.258 },
+  { code: 'BNA', name: 'Nashville International Airport', city: 'Nashville', country: 'USA', lat: 36.1263, lng: -86.6774 },
+  { code: 'DEN', name: 'Denver International Airport', city: 'Denver', country: 'USA', lat: 39.8561, lng: -104.6737 },
+  { code: 'SLC', name: 'Salt Lake City International Airport', city: 'Salt Lake City', country: 'USA', lat: 40.7899, lng: -111.9791 },
+  { code: 'PHX', name: 'Phoenix Sky Harbor International Airport', city: 'Phoenix', country: 'USA', lat: 33.4352, lng: -112.0101 },
+  { code: 'LAS', name: 'Harry Reid International Airport', city: 'Las Vegas', country: 'USA', lat: 36.084, lng: -115.1537 },
+  { code: 'LAX', name: 'Los Angeles International Airport', city: 'Los Angeles', country: 'USA', lat: 33.9416, lng: -118.4085 },
+  { code: 'SAN', name: 'San Diego International Airport', city: 'San Diego', country: 'USA', lat: 32.7338, lng: -117.1933 },
+  { code: 'SFO', name: 'San Francisco International Airport', city: 'San Francisco', country: 'USA', lat: 37.6213, lng: -122.379 },
+  { code: 'SJC', name: 'San Jose Mineta International Airport', city: 'San Jose', country: 'USA', lat: 37.3639, lng: -121.9289 },
+  { code: 'PDX', name: 'Portland International Airport', city: 'Portland', country: 'USA', lat: 45.5898, lng: -122.5951 },
+  { code: 'SEA', name: 'Seattle-Tacoma International Airport', city: 'Seattle', country: 'USA', lat: 47.4502, lng: -122.3088 },
+  { code: 'HNL', name: 'Daniel K. Inouye International Airport', city: 'Honolulu', country: 'USA', lat: 21.3187, lng: -157.9225 },
+  { code: 'ANC', name: 'Ted Stevens Anchorage International Airport', city: 'Anchorage', country: 'USA', lat: 61.1743, lng: -149.9963 },
+  { code: 'YYZ', name: 'Toronto Pearson International Airport', city: 'Toronto', country: 'Canada', lat: 43.6777, lng: -79.6248 },
+  { code: 'YVR', name: 'Vancouver International Airport', city: 'Vancouver', country: 'Canada', lat: 49.1967, lng: -123.1815 },
+  { code: 'YUL', name: 'Montréal-Trudeau International Airport', city: 'Montreal', country: 'Canada', lat: 45.4706, lng: -73.7408 },
+  { code: 'YYC', name: 'Calgary International Airport', city: 'Calgary', country: 'Canada', lat: 51.1215, lng: -114.0076 },
+  { code: 'MEX', name: 'Mexico City International Airport', city: 'Mexico City', country: 'Mexico', lat: 19.4363, lng: -99.0721 },
+  { code: 'CUN', name: 'Cancún International Airport', city: 'Cancún', country: 'Mexico', lat: 21.0365, lng: -86.8771 },
+  { code: 'GRU', name: 'São Paulo/Guarulhos International Airport', city: 'São Paulo', country: 'Brazil', lat: -23.4356, lng: -46.4731 },
+  { code: 'GIG', name: 'Rio de Janeiro/Galeão International Airport', city: 'Rio de Janeiro', country: 'Brazil', lat: -22.8099, lng: -43.2506 },
+  { code: 'EZE', name: 'Ministro Pistarini International Airport', city: 'Buenos Aires', country: 'Argentina', lat: -34.8222, lng: -58.5358 },
+  { code: 'BOG', name: 'El Dorado International Airport', city: 'Bogotá', country: 'Colombia', lat: 4.7016, lng: -74.1469 },
+  { code: 'LIM', name: 'Jorge Chávez International Airport', city: 'Lima', country: 'Peru', lat: -12.0219, lng: -77.1143 },
+  { code: 'SCL', name: 'Arturo Merino Benítez International Airport', city: 'Santiago', country: 'Chile', lat: -33.393, lng: -70.7858 },
+  { code: 'LHR', name: 'London Heathrow Airport', city: 'London', country: 'UK', lat: 51.47, lng: -0.4543 },
+  { code: 'MAN', name: 'Manchester Airport', city: 'Manchester', country: 'UK', lat: 53.3537, lng: -2.275 },
+  { code: 'DUB', name: 'Dublin Airport', city: 'Dublin', country: 'Ireland', lat: 53.4264, lng: -6.2499 },
+  { code: 'CDG', name: 'Paris Charles de Gaulle Airport', city: 'Paris', country: 'France', lat: 49.0097, lng: 2.5479 },
+  { code: 'AMS', name: 'Amsterdam Airport Schiphol', city: 'Amsterdam', country: 'Netherlands', lat: 52.3105, lng: 4.7683 },
+  { code: 'FRA', name: 'Frankfurt Airport', city: 'Frankfurt', country: 'Germany', lat: 50.0379, lng: 8.5622 },
+  { code: 'MUC', name: 'Munich Airport', city: 'Munich', country: 'Germany', lat: 48.3537, lng: 11.775 },
+  { code: 'ZRH', name: 'Zurich Airport', city: 'Zurich', country: 'Switzerland', lat: 47.4582, lng: 8.5555 },
+  { code: 'MAD', name: 'Adolfo Suárez Madrid–Barajas Airport', city: 'Madrid', country: 'Spain', lat: 40.4983, lng: -3.5676 },
+  { code: 'BCN', name: 'Josep Tarradellas Barcelona-El Prat Airport', city: 'Barcelona', country: 'Spain', lat: 41.2974, lng: 2.0833 },
+  { code: 'LIS', name: 'Humberto Delgado Airport', city: 'Lisbon', country: 'Portugal', lat: 38.7742, lng: -9.1342 },
+  { code: 'FCO', name: 'Leonardo da Vinci–Fiumicino Airport', city: 'Rome', country: 'Italy', lat: 41.8003, lng: 12.2389 },
+  { code: 'MXP', name: 'Milan Malpensa Airport', city: 'Milan', country: 'Italy', lat: 45.6301, lng: 8.7255 },
+  { code: 'ATH', name: 'Athens International Airport', city: 'Athens', country: 'Greece', lat: 37.9364, lng: 23.9445 },
+  { code: 'VIE', name: 'Vienna International Airport', city: 'Vienna', country: 'Austria', lat: 48.1103, lng: 16.5697 },
+  { code: 'CPH', name: 'Copenhagen Airport', city: 'Copenhagen', country: 'Denmark', lat: 55.618, lng: 12.6508 },
+  { code: 'ARN', name: 'Stockholm Arlanda Airport', city: 'Stockholm', country: 'Sweden', lat: 59.6498, lng: 17.9238 },
+  { code: 'IST', name: 'Istanbul Airport', city: 'Istanbul', country: 'Turkey', lat: 41.2753, lng: 28.7519 },
+  { code: 'DXB', name: 'Dubai International Airport', city: 'Dubai', country: 'UAE', lat: 25.2532, lng: 55.3657 },
+  { code: 'DOH', name: 'Hamad International Airport', city: 'Doha', country: 'Qatar', lat: 25.2731, lng: 51.6081 },
+  { code: 'CAI', name: 'Cairo International Airport', city: 'Cairo', country: 'Egypt', lat: 30.1219, lng: 31.4056 },
+  { code: 'CMN', name: 'Mohammed V International Airport', city: 'Casablanca', country: 'Morocco', lat: 33.3675, lng: -7.5899 },
+  { code: 'JNB', name: 'O.R. Tambo International Airport', city: 'Johannesburg', country: 'South Africa', lat: -26.1367, lng: 28.2411 },
+  { code: 'CPT', name: 'Cape Town International Airport', city: 'Cape Town', country: 'South Africa', lat: -33.9715, lng: 18.6021 },
+  { code: 'DEL', name: 'Indira Gandhi International Airport', city: 'New Delhi', country: 'India', lat: 28.5562, lng: 77.1 },
+  { code: 'BOM', name: 'Chhatrapati Shivaji Maharaj International Airport', city: 'Mumbai', country: 'India', lat: 19.0896, lng: 72.8656 },
+  { code: 'SIN', name: 'Singapore Changi Airport', city: 'Singapore', country: 'Singapore', lat: 1.3644, lng: 103.9915 },
+  { code: 'BKK', name: 'Suvarnabhumi Airport', city: 'Bangkok', country: 'Thailand', lat: 13.69, lng: 100.7501 },
+  { code: 'HKG', name: 'Hong Kong International Airport', city: 'Hong Kong', country: 'China', lat: 22.308, lng: 113.9185 },
+  { code: 'ICN', name: 'Incheon International Airport', city: 'Seoul', country: 'South Korea', lat: 37.4602, lng: 126.4407 },
+  { code: 'HND', name: 'Tokyo Haneda Airport', city: 'Tokyo', country: 'Japan', lat: 35.5494, lng: 139.7798 },
+  { code: 'KIX', name: 'Kansai International Airport', city: 'Osaka', country: 'Japan', lat: 34.432, lng: 135.2304 },
+  { code: 'TPE', name: 'Taiwan Taoyuan International Airport', city: 'Taipei', country: 'Taiwan', lat: 25.0797, lng: 121.2342 },
+  { code: 'MNL', name: 'Ninoy Aquino International Airport', city: 'Manila', country: 'Philippines', lat: 14.5086, lng: 121.0194 },
+  { code: 'CGK', name: 'Soekarno-Hatta International Airport', city: 'Jakarta', country: 'Indonesia', lat: -6.1256, lng: 106.6559 },
+  { code: 'SYD', name: 'Sydney Kingsford Smith Airport', city: 'Sydney', country: 'Australia', lat: -33.9399, lng: 151.1753 },
+  { code: 'MEL', name: 'Melbourne Airport', city: 'Melbourne', country: 'Australia', lat: -37.669, lng: 144.841 },
+  { code: 'AKL', name: 'Auckland Airport', city: 'Auckland', country: 'New Zealand', lat: -37.0082, lng: 174.785 },
+];
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function findNearestAirportByCoords(latitude: number, longitude: number) {
+  let best = MAJOR_AIRPORTS[0];
+  let bestDist = Infinity;
+  for (const ap of MAJOR_AIRPORTS) {
+    const d = haversineKm(latitude, longitude, ap.lat, ap.lng);
+    if (d < bestDist) {
+      bestDist = d;
+      best = ap;
+    }
+  }
+  return {
+    code: best.code,
+    name: best.name,
+    city: best.city,
+    country: best.country,
+    distanceKm: Math.round(bestDist),
+    label: `${best.code} — ${best.city} (${best.name})`,
+  };
+}
+
+const wrapAffiliateLink = (
+  url: string,
+  destination: string,
+  type: string,
+  options?: { name?: string; departureAirport?: string; startDate?: string; endDate?: string }
+): string => {
+  const ref = (process.env.AFFILIATE_REF || 'whisk_travel').trim();
+  const fallbackPartnerId = (process.env.AFFILIATE_PARTNER_ID || '').trim();
+  const typePartnerId =
+    (type === 'hotel'
+      ? process.env.AFFILIATE_HOTELS_ID
+      : type === 'flight'
+      ? process.env.AFFILIATE_FLIGHTS_ID
+      : type === 'tour'
+      ? process.env.AFFILIATE_TOURS_ID
+      : type === 'restaurant'
+      ? process.env.AFFILIATE_DINING_ID
+      : ''
+    )?.trim() || fallbackPartnerId;
+
+  const validStart = options?.startDate && /^\d{4}-\d{2}-\d{2}$/.test(options.startDate) ? options.startDate : '';
+  const validEnd = options?.endDate && /^\d{4}-\d{2}-\d{2}$/.test(options.endDate) ? options.endDate : '';
+
+  let targetUrl = (url || '').trim();
+  const isGenericFallback =
+    !targetUrl ||
+    targetUrl === 'https://google.com' ||
+    targetUrl === 'http://google.com' ||
+    targetUrl.includes('example.com');
+
+  if (type === 'flight') {
+    const origin = (options?.departureAirport || '').trim();
+    const datePhrase = validStart && validEnd ? ` on ${validStart} through ${validEnd}` : validStart ? ` on ${validStart}` : '';
+    const flightQuery = origin
+      ? `Flights from ${origin} to ${destination}${datePhrase}`
+      : `Flights to ${destination}${datePhrase}`;
+    if (isGenericFallback || !targetUrl.toLowerCase().includes('flight')) {
+      targetUrl = `https://www.google.com/travel/flights?q=${encodeURIComponent(flightQuery)}`;
+    }
+  } else if (isGenericFallback) {
+    const placeQuery = `${options?.name || ''} ${destination}`.trim();
+    if (type === 'hotel') {
+      targetUrl = `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(placeQuery)}`;
+    } else if (type === 'tour') {
+      targetUrl = `https://www.viator.com/searchResults/all?text=${encodeURIComponent(placeQuery)}`;
+    } else {
+      targetUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(placeQuery)}`;
+    }
+  }
+
   try {
-    const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
-    urlObj.searchParams.append('ref', 'whisk_bestie');
-    urlObj.searchParams.append('partner_id', 'WHISK_PARTNER_ID');
-    urlObj.searchParams.append('dest', destination.toLowerCase().replace(/\s+/g, '_'));
+    const urlObj = new URL(targetUrl.startsWith('http') ? targetUrl : `https://${targetUrl}`);
+    if (type === 'hotel' && urlObj.hostname.includes('booking.com')) {
+      if (validStart && !urlObj.searchParams.has('checkin')) urlObj.searchParams.set('checkin', validStart);
+      if (validEnd && !urlObj.searchParams.has('checkout')) urlObj.searchParams.set('checkout', validEnd);
+    }
+    if (ref && !urlObj.searchParams.has('ref')) {
+      urlObj.searchParams.set('ref', ref);
+    }
+    if (typePartnerId) {
+      if (urlObj.hostname.includes('booking.com')) {
+        urlObj.searchParams.set('aid', typePartnerId);
+      } else if (urlObj.hostname.includes('viator.com')) {
+        urlObj.searchParams.set('pid', typePartnerId);
+      } else {
+        urlObj.searchParams.set('partner_id', typePartnerId);
+      }
+    }
     return urlObj.toString();
   } catch (_e) {
-    return url;
+    return targetUrl;
   }
 };
 
@@ -204,9 +386,12 @@ async function generateContentWithResilience(options: {
     allowUngroundedFallbackOn429 = false,
   } = options;
 
+  const hasMapsTool =
+    Array.isArray(config?.tools) &&
+    config.tools.some((t: any) => t && typeof t === 'object' && 'googleMaps' in t);
+
   const attempts: Array<{ model: string; config: any; delayBeforeMs: number }> = [
     { model, config, delayBeforeMs: 0 },
-    { model, config, delayBeforeMs: 1200 },
   ];
 
   if (allowLiteFallback && model !== 'gemini-3.1-flash-lite') {
@@ -214,7 +399,11 @@ async function generateContentWithResilience(options: {
     if (liteConfig.thinkingConfig) {
       liteConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.MINIMAL };
     }
-    attempts.push({ model: 'gemini-3.1-flash-lite', config: liteConfig, delayBeforeMs: 600 });
+    if (hasMapsTool) {
+      liteConfig.tools = [{ googleSearch: {} }];
+      delete liteConfig.toolConfig;
+    }
+    attempts.push({ model: 'gemini-3.1-flash-lite', config: liteConfig, delayBeforeMs: 900 });
 
     if (allowUngroundedFallbackOn429 && liteConfig.tools) {
       const ungroundedConfig = { ...liteConfig };
@@ -223,14 +412,17 @@ async function generateContentWithResilience(options: {
       attempts.push({
         model: 'gemini-3.1-flash-lite',
         config: ungroundedConfig,
-        delayBeforeMs: 400,
+        delayBeforeMs: 700,
       });
     }
-  } else if (allowUngroundedFallbackOn429 && config?.tools) {
-    const ungroundedConfig = { ...config };
-    delete ungroundedConfig.tools;
-    delete ungroundedConfig.toolConfig;
-    attempts.push({ model, config: ungroundedConfig, delayBeforeMs: 400 });
+  } else {
+    attempts.push({ model, config, delayBeforeMs: 1200 });
+    if (allowUngroundedFallbackOn429 && config?.tools) {
+      const ungroundedConfig = { ...config };
+      delete ungroundedConfig.tools;
+      delete ungroundedConfig.toolConfig;
+      attempts.push({ model, config: ungroundedConfig, delayBeforeMs: 700 });
+    }
   }
 
   let lastError: any;
@@ -261,6 +453,16 @@ async function generateContentWithResilience(options: {
 // Health Check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
+// Nearest Major Airport lookup from browser geolocation coordinates
+app.post('/api/location/nearest-airport', (req, res) => {
+  const lat = Number(req.body?.latitude);
+  const lng = Number(req.body?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return res.status(400).json({ error: 'Valid latitude and longitude coordinates are required.' });
+  }
+  return res.json(findNearestAirportByCoords(lat, lng));
 });
 
 // Resolve non-PII @username -> Firebase Auth login email via Firebase Admin
@@ -412,27 +614,47 @@ app.post('/api/legal/consent', requireAuth, async (req: AuthRequest, res) => {
     const marketingOptIn = Boolean(body.marketingOptIn);
     const nowIso = new Date().toISOString();
 
-    await adminDb
-      .collection('users')
-      .doc(uid)
-      .set(
-        {
-          legalConsentVersion: version,
-          legalConsentAcceptedAt: FieldValue.serverTimestamp(),
+    try {
+      await adminDb
+        .collection('users')
+        .doc(uid)
+        .set(
+          {
+            legalConsentVersion: version,
+            legalConsentAcceptedAt: FieldValue.serverTimestamp(),
+            marketingOptIn,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+    } catch (adminErr: any) {
+      const msg = String(adminErr?.message || '');
+      const isAdminIamUnavailable =
+        adminErr?.code === 7 ||
+        adminErr?.code === 16 ||
+        msg.includes('PERMISSION_DENIED') ||
+        msg.includes('Could not load the default credentials');
+      if (isAdminIamUnavailable) {
+        return res.json({
+          recorded: true,
+          syncedVia: 'client_firestore',
+          version,
           marketingOptIn,
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
+          acceptedAt: nowIso,
+        });
+      }
+      throw adminErr;
+    }
 
     return res.json({
       recorded: true,
+      syncedVia: 'server_admin',
       version,
       marketingOptIn,
       acceptedAt: nowIso,
     });
   } catch (err: any) {
-    console.error('Failed to record backend legal consent:', err);
+    console.warn('Backend consent audit sync skipped:', err?.message || err);
     return res.status(503).json({
       error: 'Backend consent audit temporarily unavailable.',
       code: 'ADMIN_UNAVAILABLE',
@@ -763,7 +985,7 @@ app.post('/api/maps/geocode-itinerary', async (req, res) => {
   }
 });
 
-// Generate Travel Itinerary with Google Search + Google Maps Grounding
+// Generate Travel Itinerary with fast low-latency Google Search Grounding, nearest airport routing, & day-attached bookings
 app.post(['/api/gemini/itinerary', '/api/itinerary'], async (req, res) => {
   try {
     const params = req.body;
@@ -771,42 +993,99 @@ app.post(['/api/gemini/itinerary', '/api/itinerary'], async (req, res) => {
       return res.status(400).json({ error: 'Destination is required' });
     }
 
-    const itineraryPrompt = `You are an expert travel planner and a supportive, excited travel bestie. Create a highly customized, structured travel itinerary JSON for ${params.destination}.
-    
-    You MUST search the web in real-time to find actual current pricing, properties, and rates for:
-    1. Average flight prices from major hubs or realistic routes for a ${params.duration || '3 days'} trip.
-    2. Real, highly-rated hotels/boutique lodging in ${params.destination} with estimated current nightly rates and availability status.
-    3. Top restaurants and popular excursions/tours matching the interests with estimated prices.
+    // Resolve departure airport from explicit user input or browser coordinates
+    let resolvedDepartureAirport =
+      typeof params.departureAirport === 'string' && params.departureAirport.trim()
+        ? params.departureAirport.trim().slice(0, 120)
+        : typeof params.departureLocation === 'string' && params.departureLocation.trim()
+        ? params.departureLocation.trim().slice(0, 120)
+        : '';
 
-    User Preferences & Context:
-    - Duration: ${params.duration || '3 days'}
-    - Interests: ${(params.interests || []).join(', ')}
+    if (
+      !resolvedDepartureAirport &&
+      typeof params.latitude === 'number' &&
+      typeof params.longitude === 'number'
+    ) {
+      const nearest = findNearestAirportByCoords(params.latitude, params.longitude);
+      resolvedDepartureAirport = `${nearest.code} (${nearest.city})`;
+    }
+
+    const preferredSpotsList: Array<{ name: string; destination?: string; description?: string }> =
+      Array.isArray(params.preferredSpots)
+        ? params.preferredSpots
+            .filter((s: any) => s && typeof s.name === 'string' && s.name.trim())
+            .slice(0, 6)
+        : [];
+
+    const preferredSpotsSection =
+      preferredSpotsList.length > 0
+        ? `\n    Traveler's Previously Explored / Saved Spots (weave matching spots into the day plans when relevant to ${params.destination}):\n    ${preferredSpotsList
+            .map((s) => `- ${s.name}${s.destination ? ` (${s.destination})` : ''}${s.description ? `: ${s.description.slice(0, 120)}` : ''}`)
+            .join('\n    ')}`
+        : '';
+
+    const isoDateRe = /^\d{4}-\d{2}-\d{2}$/;
+    const rawStartDate = typeof params.startDate === 'string' && isoDateRe.test(params.startDate.trim()) ? params.startDate.trim() : '';
+    const rawEndDate = typeof params.endDate === 'string' && isoDateRe.test(params.endDate.trim()) ? params.endDate.trim() : '';
+
+    let resolvedDuration = params.duration || '3 days';
+    let travelDatesContext = 'Flexible dates (not specified)';
+    const calendarDayLabels: string[] = [];
+
+    if (rawStartDate) {
+      const startObj = new Date(`${rawStartDate}T12:00:00Z`);
+      const parsedDurationDays = Number.parseInt(String(resolvedDuration), 10) || 3;
+      let dayCount = Math.min(14, Math.max(1, parsedDurationDays));
+      let effectiveEnd = rawEndDate;
+
+      if (rawEndDate) {
+        const endObj = new Date(`${rawEndDate}T12:00:00Z`);
+        const diffDays = Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        if (diffDays >= 1 && diffDays <= 14) {
+          dayCount = diffDays;
+          resolvedDuration = `${dayCount} ${dayCount === 1 ? 'day' : 'days'}`;
+        }
+      } else {
+        const computedEnd = new Date(startObj.getTime() + (dayCount - 1) * 86400000);
+        effectiveEnd = computedEnd.toISOString().slice(0, 10);
+      }
+
+      for (let i = 0; i < dayCount; i++) {
+        const d = new Date(startObj.getTime() + i * 86400000);
+        calendarDayLabels.push(d.toISOString().slice(0, 10));
+      }
+
+      travelDatesContext = effectiveEnd
+        ? `${rawStartDate} to ${effectiveEnd} (${dayCount} ${dayCount === 1 ? 'day' : 'days'} — account for exact season, day-of-week closures, local events, and seasonal flight/hotel pricing)`
+        : `Starting ${rawStartDate} (${resolvedDuration})`;
+    }
+
+    const flightOriginContext = resolvedDepartureAirport
+      ? `Departure Hub / Nearest Airport: ${resolvedDepartureAirport} (MUST estimate flight options & pricing departing from ${resolvedDepartureAirport} to ${params.destination})`
+      : `Departure Hub: Not specified (estimate realistic round-trip flights from major international hubs to ${params.destination})`;
+
+    const itineraryPrompt = `You are Whisk's expert travel planner. Create a customized, real-world travel itinerary JSON for ${params.destination}.
+
+    Search live travel information to ground:
+    1. Flight options and current round-trip price estimates (${flightOriginContext}).
+    2. Real, highly-rated hotels/boutique lodging in ${params.destination} with current nightly rates and availability status.
+    3. Real restaurants and tours matching the traveler's interests with realistic prices.
+
+    Traveler Profile:
+    - Travel Dates: ${travelDatesContext}
+    - Duration: ${resolvedDuration}
+    - ${flightOriginContext}
+    - Interests: ${(params.interests || []).join(', ') || 'Local culture, dining, and scenic highlights'}
     - Budget Tier: ${params.budget || 'Mid-range'}
     - Pace: ${params.pace || 'Moderate'}
-    - Accessibility Accommodations: ${(params.accessibility && params.accessibility.length > 0) ? params.accessibility.join(', ') : 'None specified'}
+    - Accessibility Needs: ${(params.accessibility && params.accessibility.length > 0) ? params.accessibility.join(', ') : 'None specified'}${preferredSpotsSection}
 
-    Rules:
-    1. Talk like an excited, luxury-savvy or budget-smart travel bestie in the summary. Keep the text engaging and enthusiastic.
-    2. For every option (hotels, tours, restaurants, flights), you MUST include realistic, grounded 'price' strings (e.g., "$120/night", "$75/person", "$450 round-trip") and specific 'availability' status (e.g., "Only 3 spots left", "Booking fast", "Widely available", "Likely to sell out").
-    3. All entities, hotels, restaurants, and tours must represent actual physical places/options found via web search grounding.
-    4. Each activity 'location' MUST be a specific, real-world physical venue, landmark, restaurant, or neighborhood name (never vague like "Morning coffee" or "Local dinner") so it can be pinned on a map.
-    5. Any specified accessibility requirements MUST be directly reflected in the descriptions of day plans and recommendation details.`;
-
-    const mapsPrompt = `Find top real-world landmarks, beloved restaurants, scenic neighborhoods, and boutique stays in ${params.destination} matching these interests: ${(params.interests || []).join(', ') || 'top highlights'}${params.accessibility?.length ? ` with accessibility focus (${params.accessibility.join(', ')})` : ''}. Provide a concise, enthusiastic local neighborhood snapshot highlighting verified spots.`;
-
-    const mapsConfig: any = {
-      tools: [{ googleMaps: {} }],
-    };
-    if (typeof params.latitude === 'number' && typeof params.longitude === 'number') {
-      mapsConfig.toolConfig = {
-        retrievalConfig: {
-          latLng: {
-            latitude: params.latitude,
-            longitude: params.longitude,
-          },
-        },
-      };
-    }
+    Strict Rules:
+    1. Keep descriptions concise, lively, and practical so the schedule is crisp and scannable.
+    2. Every activity 'location' MUST be a specific real-world venue, landmark, restaurant, or neighborhood in ${params.destination} (never generic phrases like "Local dinner"), and include a concise 1-sentence 'insiderTip' with verified timing, dish, or logistics advice.
+    3. For every recommendation (flight, hotel, restaurant, tour), include realistic 'price', 'availability', and 'dayNumbers' (array of 1-indexed day numbers where that booking is utilized: put flights & hotel check-in on [1], and each restaurant or tour on the exact day number(s) it appears in the itinerary).
+    4. For flight recommendations, include 'departureAirport' matching "${resolvedDepartureAirport || 'Major Hub'}".
+    5. Directly weave any accessibility requirements into activity descriptions and recommendations.`;
 
     const { response: structResponse } = await generateContentWithResilience({
       model: 'gemini-4-hydrogen',
@@ -814,6 +1093,7 @@ app.post(['/api/gemini/itinerary', '/api/itinerary'], async (req, res) => {
       allowLiteFallback: true,
       allowUngroundedFallbackOn429: true,
       config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         tools: [{ googleSearch: {} }],
         responseMimeType: 'application/json',
         responseSchema: {
@@ -838,6 +1118,7 @@ app.post(['/api/gemini/itinerary', '/api/itinerary'], async (req, res) => {
                         time: { type: Type.STRING },
                         description: { type: Type.STRING },
                         location: { type: Type.STRING },
+                        insiderTip: { type: Type.STRING },
                       },
                       required: ['time', 'description', 'location'],
                     },
@@ -857,8 +1138,13 @@ app.post(['/api/gemini/itinerary', '/api/itinerary'], async (req, res) => {
                   affiliateUrl: { type: Type.STRING },
                   price: { type: Type.STRING },
                   availability: { type: Type.STRING },
+                  dayNumbers: {
+                    type: Type.ARRAY,
+                    items: { type: Type.NUMBER },
+                  },
+                  departureAirport: { type: Type.STRING },
                 },
-                required: ['name', 'type', 'description', 'affiliateUrl', 'price', 'availability'],
+                required: ['name', 'type', 'description', 'affiliateUrl', 'price', 'availability', 'dayNumbers'],
               },
             },
           },
@@ -868,51 +1154,74 @@ app.post(['/api/gemini/itinerary', '/api/itinerary'], async (req, res) => {
     });
 
     const parsed = parseModelJson(structResponse.text, {} as any);
-    const processedRecommendations = (parsed.recommendations || []).map((rec: any) => ({
-      ...rec,
-      affiliateUrl: wrapAffiliateLink(rec.affiliateUrl || 'https://google.com', params.destination, rec.type),
+    const totalDays = Math.max(1, (parsed.days || []).length);
+
+    const processedRecommendations = (parsed.recommendations || []).map((rec: any) => {
+      const validDayNums = Array.isArray(rec.dayNumbers)
+        ? rec.dayNumbers
+            .map((n: any) => Number(n))
+            .filter((n: number) => Number.isInteger(n) && n >= 1 && n <= totalDays)
+        : [];
+      const fallbackDays =
+        validDayNums.length > 0
+          ? validDayNums
+          : rec.type === 'flight' || rec.type === 'hotel'
+          ? [1]
+          : [];
+
+      const recDeparture =
+        rec.type === 'flight'
+          ? rec.departureAirport || resolvedDepartureAirport || undefined
+          : undefined;
+
+      return {
+        ...rec,
+        dayNumbers: fallbackDays,
+        departureAirport: recDeparture,
+        affiliateUrl: wrapAffiliateLink(rec.affiliateUrl || '', params.destination, rec.type, {
+          name: rec.name,
+          departureAirport: recDeparture,
+          startDate: rawStartDate || undefined,
+          endDate: rawEndDate || (calendarDayLabels.length > 0 ? calendarDayLabels[calendarDayLabels.length - 1] : undefined),
+        }),
+      };
+    });
+
+    // Attach exact calendar dates to each DayPlan when startDate was selected
+    let finalDays = (parsed.days || []).map((day: any, idx: number) => ({
+      ...day,
+      dayNumber: typeof day.dayNumber === 'number' ? day.dayNumber : idx + 1,
+      date: calendarDayLabels[idx] || undefined,
     }));
-
-    // Run Maps grounding enrichment sequentially AFTER structured route to avoid concurrent RPM bursts
-    let mapsSources: GroundingSource[] = [];
-    let mapsOverview = '';
+    let quotaExceeded = false;
     try {
-      const mapsResponse = await getAi().models.generateContent({
-        model: 'gemini-4-hydrogen',
-        contents: mapsPrompt,
-        config: mapsConfig,
-      });
-      mapsSources = extractGroundingSources(mapsResponse);
-      mapsOverview = mapsResponse.text || '';
-    } catch (mapsErr) {
-      console.warn('Optional Maps overview skipped:', parseGeminiApiError(mapsErr).message);
+      const geocodeResult = await Promise.race([
+        geocodeItineraryDays(finalDays, parsed.destination || params.destination),
+        new Promise<{ days: any[]; quotaExceeded: boolean }>((resolve) =>
+          setTimeout(() => resolve({ days: finalDays, quotaExceeded: false }), 2200)
+        ),
+      ]);
+      finalDays = geocodeResult.days;
+      quotaExceeded = geocodeResult.quotaExceeded;
+    } catch {
+      // Non-fatal; client map lazily geocodes missing pins
     }
-
-    // Enrich itinerary day activities with real coordinates via Google Maps Geocoding API
-    const { days: geocodedDays, quotaExceeded } = await geocodeItineraryDays(
-      parsed.days || [],
-      parsed.destination || params.destination
-    );
 
     const searchSources = extractGroundingSources(structResponse);
-
-    const combinedSources: GroundingSource[] = [];
-    const seenUris = new Set<string>();
-    for (const s of [...mapsSources, ...searchSources]) {
-      if (!seenUris.has(s.uri)) {
-        seenUris.add(s.uri);
-        combinedSources.push(s);
-      }
-    }
-
     const cleanId = `trip_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const finalEndDate =
+      rawEndDate ||
+      (calendarDayLabels.length > 0 ? calendarDayLabels[calendarDayLabels.length - 1] : undefined);
 
     res.json({
       ...parsed,
-      days: geocodedDays,
+      duration: resolvedDuration,
+      startDate: rawStartDate || undefined,
+      endDate: finalEndDate,
+      departureAirport: resolvedDepartureAirport || undefined,
+      days: finalDays,
       recommendations: processedRecommendations,
-      groundingSources: combinedSources.slice(0, 35),
-      mapsOverview: mapsOverview.slice(0, 4500),
+      groundingSources: searchSources.slice(0, 25),
       mapsQuotaExceeded: quotaExceeded || undefined,
       id: cleanId,
       createdAt: new Date().toISOString(),
@@ -963,7 +1272,8 @@ app.post('/api/gemini/places', async (req, res) => {
       model: 'gemini-4-hydrogen',
       contents: prompt,
       config,
-      allowLiteFallback: false,
+      allowLiteFallback: true,
+      allowUngroundedFallbackOn429: true,
     });
 
     const sources = extractGroundingSources(response);
@@ -1016,39 +1326,50 @@ function toSeoSlug(input: string): string {
   );
 }
 
-// Generate SEO & GEO Optimized Blog Post / Organic Marketing Field Guide
+// Generate Public Editorial Destination Guide (edited search intel + 1-3 suggested spots, keeping all itinerary data & methodology private)
 app.post(['/api/gemini/blog-post', '/api/blog-post'], async (req, res) => {
   try {
-    const itinerary = req.body;
-    if (!itinerary || !itinerary.destination) {
-      return res.status(400).json({ error: 'Valid itinerary is required' });
+    const payload = req.body || {};
+    if (!payload.destination) {
+      return res.status(400).json({ error: 'Destination is required' });
     }
 
-    const spotNames = (itinerary.recommendations || []).map((r: any) => r.name).filter(Boolean).join(', ');
-    const dayHighlights = (itinerary.days || [])
-      .slice(0, 4)
-      .map((d: any) => `Day ${d.dayNumber} (${d.theme}): ${(d.activities || []).map((a: any) => a.location).join(', ')}`)
-      .join(' | ');
+    const searchIntelNotes = Array.isArray(payload.searchIntel)
+      ? payload.searchIntel
+          .slice(0, 6)
+          .map((s: any) => (s?.title ? `${s.title}${s.snippet ? ` — ${s.snippet}` : ''}` : ''))
+          .filter(Boolean)
+          .join(' | ')
+      : '';
 
-    const prompt = `Write an engaging, organic-marketing-grade travel Field Guide for ${itinerary.destination} (${itinerary.duration || 'multi-day trip'}) ${itinerary.accessibility && itinerary.accessibility.length > 0 ? `(highlighting accessibility for: ${itinerary.accessibility.join(', ')})` : ''} optimized for both SEO (Google Search) and GEO (Generative Engine Optimization / AI answer citations).
+    const spotHints = Array.isArray(payload.spotHints)
+      ? payload.spotHints
+          .slice(0, 3)
+          .map((s: any) => (s?.name ? `${s.name} (${s.type || 'spot'})` : ''))
+          .filter(Boolean)
+          .join(', ')
+      : '';
 
-    **Itinerary Context:**
-    - Spots & Partners: ${spotNames || itinerary.destination}
-    - Highlights: ${dayHighlights || itinerary.summary || itinerary.destination}
-    - Travel Style: ${itinerary.pace || 'Balanced'} pace · ${itinerary.budget || 'Mid-range'} budget
+    const prompt = `Write a polished, public-facing destination Field Guide for ${payload.destination} optimized for organic discovery and human readers.
 
-    **Requirements:**
-    1. Voice: Warm, authentic "Travel Bestie" insider storytelling — enthusiastic, grounded in real neighborhoods, zero corporate fluff.
-    2. SEO Optimization:
-       - "seoTitle": Compelling search headline (45–60 characters) with destination + trip intent.
-       - "metaDescription": 130–158 character organic search snippet ending with a clear action.
-       - "slug": Lowercase hyphenated URL slug including destination and focus.
-       - "keywords": 6–8 high-intent long-tail search phrases travelers actually type.
-    3. GEO (Generative Engine Optimization):
-       - "geoSummary": A crisp, citable 2–3 sentence factual overview naming the city/country, best neighborhoods, transit notes, and signature landmarks so AI engines can quote it directly.
-       - "neighborhoods": 3–6 real districts, landmarks, or areas covered in this itinerary.
-       - "faqs": 3–4 helpful traveler Q&A pairs ("When is the best time...", "How do I get around...", "Is it walkable/accessible...") with direct, factual 2-sentence answers.
-    4. Content Markdown: Structured with clear ## headers, real entity names from above, scannable bullet highlights (* item), and a "Bestie Secret Tip" in a blockquote (> tip).`;
+    Public Research Notes (edit cleanly for a general magazine-style audience):
+    - Destination: ${payload.destination}
+    - Public Research Context: ${searchIntelNotes || payload.destination}
+    - Optional Spot Ideas: ${spotHints || 'Use 1-3 iconic local places to eat, visit, or see'}
+
+    Strict Privacy & Editorial Rules:
+    1. Keep ALL personal traveler itinerary data and how Whisk builds itineraries 100% private. NEVER mention AI, prompts, algorithms, user schedules, private itineraries, or behind-the-scenes tools.
+    2. When describing ${payload.destination}, naturally suggest **1 to 3 standout real-world places to eat, visit, or see** with vivid local flavor and practical timing tips.
+    3. Voice: Warm, crisp, editorial travel writing — authentic neighborhood feel, zero corporate filler.
+    4. SEO & GEO Metadata:
+       - "seoTitle": Compelling search headline (45–60 characters).
+       - "metaDescription": 130–158 character snippet inviting readers to explore ${payload.destination}.
+       - "slug": Lowercase hyphenated URL slug including destination.
+       - "keywords": 5–7 natural destination travel search phrases.
+       - "geoSummary": A concise 2–3 sentence factual destination overview covering best neighborhoods, local transit, and when to go.
+       - "neighborhoods": 3–5 real neighborhoods or areas in ${payload.destination}.
+       - "faqs": 3 helpful general traveler Q&As with concise 2-sentence answers.
+    5. Content Markdown: Structured with clear ## headers, 1–3 highlighted spots to eat/visit/see, scannable bullet points (* item), and one local insider tip in a blockquote (> tip).`;
 
     const { response } = await generateContentWithResilience({
       model: 'gemini-4-hydrogen',
@@ -1056,6 +1377,7 @@ app.post(['/api/gemini/blog-post', '/api/blog-post'], async (req, res) => {
       allowLiteFallback: true,
       allowUngroundedFallbackOn429: true,
       config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         tools: [{ googleSearch: {} }],
         responseMimeType: 'application/json',
         responseSchema: {
@@ -1103,16 +1425,21 @@ app.post(['/api/gemini/blog-post', '/api/blog-post'], async (req, res) => {
     });
 
     const parsed = parseModelJson(response.text, {} as any);
-    const finalSlug = toSeoSlug(parsed.slug || parsed.title || itinerary.destination);
+    const finalSlug = toSeoSlug(parsed.slug || parsed.title || payload.destination);
     generatedGuideSlugs.add(finalSlug);
-    const geoCoordinates = extractCentroidCoordinates(itinerary);
+    const geoCoordinates =
+      payload.geoCoordinates &&
+      typeof payload.geoCoordinates.latitude === 'number' &&
+      typeof payload.geoCoordinates.longitude === 'number'
+        ? payload.geoCoordinates
+        : extractCentroidCoordinates(payload);
 
     res.json({
       ...parsed,
       slug: finalSlug,
       geoCoordinates,
-      itineraryId: itinerary.id,
-      destination: itinerary.destination,
+      itineraryId: `editorial_${Date.now()}`,
+      destination: payload.destination,
     });
   } catch (error: any) {
     const parsedErr = parseGeminiApiError(error);
@@ -1554,12 +1881,14 @@ wss.on('connection', async (clientWs: WebSocket) => {
 
 // Upgrade handler for Live WebSocket connections
 server.on('upgrade', (request, socket, head) => {
-  const isViteHmr = request.headers['sec-websocket-protocol'] === 'vite-hmr';
-  if (!isViteHmr) {
+  const pathname = new URL(request.url || '/', 'http://localhost').pathname;
+  if (pathname === '/live') {
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit('connection', ws, request);
     });
+    return;
   }
+  socket.destroy();
 });
 
 // Organic SEO Crawler Endpoints
@@ -1593,7 +1922,7 @@ async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false, ws: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);

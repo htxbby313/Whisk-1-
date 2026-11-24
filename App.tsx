@@ -60,9 +60,10 @@ import {
 } from 'lucide-react';
 import { 
   generateItinerary, 
-  generateBlogPost
+  generateBlogPost,
+  findNearestAirport,
 } from './geminiService';
-import { SearchParams, TripItinerary, BlogPost, Recommendation, MembershipTier, SavedPlace, GroundingSource, DayPlan } from './types';
+import { SearchParams, TripItinerary, BlogPost, Recommendation, MembershipTier, SavedPlace, GroundingSource, DayPlan, DiscoveredSpot } from './types';
 import { useAuth } from './src/context/AuthContext';
 import {
   deleteItineraryFromFirestore,
@@ -74,16 +75,19 @@ import {
   subscribeSavedPlaces,
   subscribeUserItineraries,
   unlockItineraryInFirestore,
-  updateItineraryBlogPostInFirestore
 } from './src/services/firestoreService';
 import { ChatBot } from './src/components/ChatBot';
 import { PlacesExplorer } from './src/components/PlacesExplorer';
 import { WeatherForecast } from './src/components/WeatherForecast';
 import { ItineraryMap } from './src/components/ItineraryMap';
-import { TripToolkit } from './src/components/TripToolkit';
 import { AuthModal } from './src/components/AuthModal';
 import { LegalModal } from './src/components/LegalModal';
 import { LegalConsentModal } from './src/components/LegalConsentModal';
+import { TravelShowcaseSection } from './src/components/TravelShowcaseSection';
+import { AdminRouteGuard } from './src/components/AdminRouteGuard';
+import { AdminDashboard } from './src/components/AdminDashboard';
+import { WhiskLogo } from './src/components/WhiskLogo';
+import { DateRangeCalendarPicker } from './src/components/DateRangeCalendarPicker';
 import { isLegalDocId, LEGAL_DOCUMENTS, LegalDocId } from './src/legal/catalog';
 import {
   DESTINATION_IMAGE_BY_KEY,
@@ -302,8 +306,6 @@ const INITIAL_ARTICLES: BlogPost[] = [
 
 const COLLAGE_POOL = LANDMARK_POLAROIDS;
 
-const PROMO_TRAVEL_PHOTOS = LOCAL_TRAVEL_IMAGE_POOL;
-
 const WASHI_TAPES = [
   {
     background: 'linear-gradient(90deg, rgba(255,59,48,0.85), rgba(255,204,0,0.85))',
@@ -345,6 +347,64 @@ const HERO_CARD_ICONS = [
   { Icon: Umbrella, color: '#FF1CF7', bg: 'bg-[#FF1CF7]/10' },
   { Icon: Compass, color: '#0F172A', bg: 'bg-slate-100' },
 ];
+
+const toLocalIsoDate = (date: Date): string => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const addDaysToIso = (iso: string, offsetDays: number): string => {
+  const base = new Date(`${iso}T12:00:00Z`);
+  if (Number.isNaN(base.getTime())) return iso;
+  base.setUTCDate(base.getUTCDate() + offsetDays);
+  return base.toISOString().slice(0, 10);
+};
+
+const diffDaysInclusive = (startIso: string, endIso: string): number => {
+  const s = new Date(`${startIso}T12:00:00Z`).getTime();
+  const e = new Date(`${endIso}T12:00:00Z`).getTime();
+  if (Number.isNaN(s) || Number.isNaN(e)) return 3;
+  return Math.round((e - s) / 86400000) + 1;
+};
+
+const formatTripDayDate = (iso?: string): string | null => {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const d = new Date(`${iso}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+};
+
+const formatTripDateRange = (startIso?: string, endIso?: string): string | null => {
+  if (!startIso || !/^\d{4}-\d{2}-\d{2}$/.test(startIso)) return null;
+  const s = new Date(`${startIso}T12:00:00Z`);
+  if (Number.isNaN(s.getTime())) return null;
+  if (!endIso || !/^\d{4}-\d{2}-\d{2}$/.test(endIso)) {
+    return s.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  }
+  const e = new Date(`${endIso}T12:00:00Z`);
+  if (Number.isNaN(e.getTime())) return null;
+  const sameYear = s.getUTCFullYear() === e.getUTCFullYear();
+  const startStr = s.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+    timeZone: 'UTC',
+  });
+  const endStr = e.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+  return `${startStr} – ${endStr}`;
+};
 
 function shuffleArray<T>(items: T[]): T[] {
   const copy = [...items];
@@ -580,15 +640,13 @@ const HeroMosaic = () => {
   );
 };
 
-const Navbar = ({ user, username, membershipTier, signingIn, onHome, onMyTrips, onSignIn, onLogOut, activeTab, onUpgrade }: any) => (
+const Navbar = ({ user, username, membershipTier, isAdmin, signingIn, onHome, onMyTrips, onOpenAdmin, onSignIn, onLogOut, activeTab, onUpgrade }: any) => (
   <nav className="sticky top-0 z-50 glass-panel shadow-sm border-b border-slate-200/60">
     <div className="max-w-7xl mx-auto px-6 sm:px-10">
       <div className="flex justify-between items-center h-20 gap-8">
         <button onClick={onHome} className="flex items-center gap-3 hover:opacity-90 transition-opacity cursor-pointer whitespace-nowrap shrink-0">
-          <div className="vibrant-gradient p-2.5 rounded-xl shadow-[var(--shadow-orange)]">
-            <Plane className="text-white w-5 h-5" />
-          </div>
-          <span className="text-2xl font-black tracking-tight text-[var(--whisk-navy)]">Whisk</span>
+          <WhiskLogo size={40} className="drop-shadow-sm" />
+          <span className="text-2xl font-black tracking-tight whisk-text-ombre">Whisk</span>
         </button>
 
         <div className="hidden md:flex items-center gap-8">
@@ -620,6 +678,15 @@ const Navbar = ({ user, username, membershipTier, signingIn, onHome, onMyTrips, 
           >
             Whisk Passport
           </button>
+          {isAdmin && onOpenAdmin && (
+            <button
+              onClick={onOpenAdmin}
+              className="text-sm font-bold text-slate-700 hover:text-[var(--whisk-terracotta)] transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <ShieldCheck className="w-4 h-4 text-[var(--whisk-terracotta)]" />
+              Admin
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
@@ -673,58 +740,6 @@ const Navbar = ({ user, username, membershipTier, signingIn, onHome, onMyTrips, 
     </div>
   </nav>
 );
-
-const TrustTabs = () => {
-  const [activeTab, setActiveTab] = React.useState(0);
-  const tabs = [
-    { 
-      title: "Our Vibe", 
-      content: "We're not some corporate travel agency. We're a group of friends who were tired of scrolling through paid ads and generic lists. Whisk was born to find the soul of a city, not just the airport hotel.",
-      icon: <Smile className="w-8 h-8" />
-    },
-    { 
-      title: "Expert Vetting", 
-      content: "Every recommendation is cross-referenced with local data and expert blogs. We don't just follow the crowd; we follow the people who actually live there. If a spot goes downhill, we remove it. Fast.",
-      icon: <ShieldCheck className="w-8 h-8" />
-    },
-    { 
-      title: "Community First", 
-      content: "Thousands of besties have used Whisk to find their new favorite pizza in Rome or a secret sunset hike in Maui. We're building a network of trust that grows with every single trip planned.",
-      icon: <Heart className="w-8 h-8" />
-    }
-  ];
-
-  return (
-    <div className="mt-8 bg-slate-50 rounded-[3rem] p-8 md:p-10 border-2 border-white shadow-lg w-full">
-      <div className="flex items-center gap-4 mb-6">
-        <div className="vibrant-gradient p-2.5 rounded-xl text-white shadow-md">
-          <MapPin className="w-5 h-5" />
-        </div>
-        <h3 className="text-2xl font-black text-[var(--whisk-navy)] tracking-tight">As a local...</h3>
-      </div>
-      <div className="flex gap-3 mb-6 overflow-x-auto pb-2 no-scrollbar">
-        {tabs.map((tab, i) => (
-          <button
-            key={i}
-            onClick={() => setActiveTab(i)}
-            className={`px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-              activeTab === i 
-              ? 'vibrant-gradient text-white shadow-md' 
-              : 'bg-white text-slate-400 hover:text-slate-600'
-            }`}
-          >
-            {tab.title}
-          </button>
-        ))}
-      </div>
-      <div className="animate-in fade-in slide-in-from-left-2 duration-300">
-        <p className="text-slate-500 text-base font-medium leading-relaxed">
-          {tabs[activeTab].content}
-        </p>
-      </div>
-    </div>
-  );
-};
 
 const BlogFeed = ({ 
   posts, 
@@ -1074,7 +1089,7 @@ const BlogPostDisplay = ({
                   </>
                 )}
               </div>
-              <h1 className="text-4xl md:text-5xl font-black text-[var(--whisk-navy)] tracking-tight leading-tight">
+              <h1 className="text-4xl md:text-5xl font-black whisk-text-ombre tracking-tight leading-tight">
                 {post.title}
               </h1>
             </div>
@@ -1084,7 +1099,7 @@ const BlogPostDisplay = ({
             {post.geoSummary && (
               <section className="bg-slate-50 border border-slate-200/80 rounded-3xl p-6 mb-8">
                 <div className="text-xs font-black uppercase tracking-widest text-[var(--whisk-azure)] mb-2 flex items-center gap-2">
-                  <Compass className="w-4 h-4" /> Quick Route Takeaways
+                  <Compass className="w-4 h-4" /> Local Snapshot
                 </div>
                 <p className="text-slate-700 text-base font-medium leading-relaxed">{post.geoSummary}</p>
               </section>
@@ -1124,37 +1139,26 @@ const BlogPostDisplay = ({
         </div>
 
         <div className="space-y-10">
-          {itinerary ? (
-            <ActionSidebar
-              recommendations={itinerary.recommendations}
-              destination={itinerary.destination}
-              savedPlaceNames={savedPlaceNames}
-              onSavePlace={onSavePlace}
-              unlocked={Boolean(itinerary.unlocked || hasActiveSubscription)}
-              onOpenPassport={onOpenPassport}
-            />
-          ) : (
-            <div className="sticky top-24 space-y-6">
-              <div className="bg-white rounded-[3rem] p-8 sm:p-10 shadow-2xl border-2 border-white space-y-5">
-                <div className="vibrant-gradient w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md">
-                  <Plane className="w-6 h-6" />
-                </div>
-                <h3 className="text-2xl font-black text-[var(--whisk-navy)] tracking-tight">
-                  Plan Your Custom {post.destination.split(',')[0]} Trip
-                </h3>
-                <p className="text-sm text-slate-600 leading-relaxed font-medium">
-                  Generate an exact day-by-day route tailored to your pace, budget, and accessibility needs—backed by live Search &amp; Google Maps.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => onPlanDestination(post.destination)}
-                  className="w-full vibrant-gradient text-white py-4 px-5 rounded-2xl font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:opacity-95 transition-opacity shadow-[var(--shadow-orange)] cursor-pointer"
-                >
-                  Build {post.destination.split(',')[0]} Route <ArrowRight className="w-4 h-4" />
-                </button>
+          <div className="sticky top-24 space-y-6">
+            <div className="bg-white rounded-[3rem] p-8 sm:p-10 shadow-2xl border-2 border-white space-y-5">
+              <div className="vibrant-gradient w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md">
+                <Plane className="w-6 h-6" />
               </div>
+              <h3 className="text-2xl font-black text-[var(--whisk-navy)] tracking-tight">
+                Plan Your Custom {post.destination.split(',')[0]} Trip
+              </h3>
+              <p className="text-sm text-slate-600 leading-relaxed font-medium">
+                Build a private day-by-day itinerary tailored to your departure city, pace, budget, and travel style.
+              </p>
+              <button
+                type="button"
+                onClick={() => onPlanDestination(post.destination)}
+                className="w-full vibrant-gradient text-white py-4 px-5 rounded-2xl font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:opacity-95 transition-opacity shadow-[var(--shadow-orange)] cursor-pointer"
+              >
+                Build {post.destination.split(',')[0]} Trip <ArrowRight className="w-4 h-4" />
+              </button>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </article>
@@ -1347,17 +1351,17 @@ const WhiskPassportModal = ({
 
 const LegalFooter = ({
   onOpenLegalDoc,
+  onOpenAdmin,
   compact = false,
 }: {
   onOpenLegalDoc: (docId: LegalDocId) => void;
+  onOpenAdmin?: () => void;
   compact?: boolean;
 }) => (
   <footer className={`bg-[var(--whisk-navy)] text-white ${compact ? 'py-16 mt-20' : 'py-24'}`}>
     <div className="max-w-7xl mx-auto px-6 sm:px-10 text-center space-y-8">
       <div className="flex items-center justify-center gap-4">
-        <div className="vibrant-gradient p-3 rounded-2xl shadow-lg">
-          <Plane className="w-7 h-7" />
-        </div>
+        <WhiskLogo size={48} className="drop-shadow-md" />
         <span className="text-3xl font-black tracking-tight uppercase">Whisk</span>
       </div>
 
@@ -1384,6 +1388,18 @@ const LegalFooter = ({
         >
           privacy@whisk.travel
         </a>
+        {onOpenAdmin && (
+          <a
+            href="/admin"
+            onClick={(e) => {
+              e.preventDefault();
+              onOpenAdmin();
+            }}
+            className="text-slate-400 hover:text-white underline-offset-4 hover:underline transition-colors py-1"
+          >
+            Admin Portal
+          </a>
+        )}
       </nav>
 
       <div className="text-slate-400 text-xs font-bold uppercase tracking-widest">
@@ -1393,17 +1409,33 @@ const LegalFooter = ({
   </footer>
 );
 
+const LANDMARK_QUICK_FACTS: string[] = [
+  'The Eiffel Tower grows up to 15 cm taller in summer as its wrought-iron lattice expands in the heat.',
+  'Senso-ji in Asakusa was founded in 645 AD, making it Tokyo’s oldest Buddhist temple.',
+  'Positano’s vertical cliffside homes were once painted bright pastels so fishermen could spot them from sea.',
+  'Oia’s whitewashed cave houses stay cool naturally thanks to thick volcanic pumice walls.',
+  'Marrakech is nicknamed the Red City for the sun-baked red clay walls built around the medina in 1122.',
+  'Zermatt has been strictly car-free since 1961—only electric shuttles and mountain trains circulate in town.',
+  'Rome’s Colosseum could seat 50,000 spectators and featured a retractable canvas awning called the velarium.',
+  'Machu Picchu’s Inca stone walls were carved so precisely that not even a knife blade fits between them.',
+  'The Taj Mahal’s four minarets lean slightly outward so an earthquake would send them away from the central tomb.',
+  'Petra’s rose-red Treasury was carved directly into sandstone cliffs by the Nabataeans over 2,000 years ago.',
+  'Rio de Janeiro’s Sugarloaf cable car has carried visitors above Guanabara Bay since 1912.',
+  'The Great Pyramid of Giza stood as the tallest human-made structure on Earth for more than 3,800 years.',
+  'Chureito Pagoda sits 398 steps above Fujiyoshida and frames Mount Fuji directly across the valley.',
+  'Antoni Gaudí originally designed Barcelona’s Park Güell as a hillside garden neighborhood of 60 homes.',
+  'Bali’s Ulun Danu Beratan Temple sits on Lake Bratan at 1,200 meters and honors the goddess of water.',
+  'Iceland’s Kirkjufell is a 463-meter-high freestanding peak sculpted by glaciers during the last Ice Age.',
+  'Venice’s Grand Canal curves in an S-shape for 3.8 km and is crossed by only four bridges.',
+  'When the Brooklyn Bridge opened in 1883, it was the longest suspension bridge in the world.',
+  'Cape Town’s Bo-Kaap neighborhood was painted in vibrant hues by residents celebrating emancipation.',
+  'The Sydney Opera House roof is covered in over one million self-cleaning glossy Swedish ceramic tiles.',
+];
+
 const LOADING_PHOTOS = LANDMARK_POLAROIDS.map((p, idx) => ({
   image: p.url,
   location: p.name,
-  tip: [
-    'Skip the elevator queue at dusk—sip café crème along Rue Saint-Dominique as the Eiffel Tower sparkles on the hour.',
-    'Visit Senso-ji in Asakusa before 8 AM for serene lantern courtyards, then stroll Sumida riverside cafés toward Skytree.',
-    'Take early morning ferries between Positano and Amalfi to beat coastal bus traffic and catch sunlit lemon groves.',
-    'Follow the Oia to Fira cliff path in the late afternoon for quiet caldera views away from sunset bottlenecks.',
-    'Ask your Marrakech riad host to arrange a rooftop mint-tea tasting just before golden hour hits the terracotta skyline.',
-    'Ride the earliest Gornergrat cogwheel train in Zermatt for mirror-calm Matterhorn reflections in Riffelsee.',
-  ][idx % 6],
+  fact: LANDMARK_QUICK_FACTS[idx % LANDMARK_QUICK_FACTS.length],
 }));
 
 const ItinerarySkeleton = ({ statusText }: { statusText: string }) => {
@@ -1412,9 +1444,8 @@ const ItinerarySkeleton = ({ statusText }: { statusText: string }) => {
   const [progress, setProgress] = React.useState(0);
 
   React.useEffect(() => {
-    // 4.5 seconds interval for switching slides
-    const slideDuration = 4500;
-    const updateRate = 50; // update scale/indicators every 50ms
+    const slideDuration = 4200;
+    const updateRate = 50;
     let elapsed = 0;
 
     const timer = setInterval(() => {
@@ -1422,13 +1453,12 @@ const ItinerarySkeleton = ({ statusText }: { statusText: string }) => {
       setProgress(Math.min((elapsed / slideDuration) * 100, 100));
 
       if (elapsed >= slideDuration) {
-        // Trigger fade out
         setFadeState('out');
         setTimeout(() => {
           setPhotoIndex((prev) => (prev + 1) % LOADING_PHOTOS.length);
           setFadeState('in');
           setProgress(0);
-        }, 500); // fade out duration
+        }, 350);
         elapsed = 0;
       }
     }, updateRate);
@@ -1442,7 +1472,7 @@ const ItinerarySkeleton = ({ statusText }: { statusText: string }) => {
       setPhotoIndex((prev) => (prev + 1) % LOADING_PHOTOS.length);
       setFadeState('in');
       setProgress(0);
-    }, 300);
+    }, 220);
   };
 
   const handlePrev = () => {
@@ -1451,203 +1481,579 @@ const ItinerarySkeleton = ({ statusText }: { statusText: string }) => {
       setPhotoIndex((prev) => (prev - 1 + LOADING_PHOTOS.length) % LOADING_PHOTOS.length);
       setFadeState('in');
       setProgress(0);
-    }, 300);
+    }, 220);
   };
 
   const activePhoto = LOADING_PHOTOS[photoIndex];
 
   return (
-    <div className="min-h-screen bg-gradient-to-tr from-orange-50/60 via-amber-50/30 to-rose-50/60 flex flex-col items-center justify-center p-6 md:p-12 relative overflow-hidden transition-all duration-700">
-      <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1.5px,transparent_1.5px)] [background-size:20px_20px] opacity-40 pointer-events-none"></div>
-      {/* Background Decorative Blur */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-[var(--whisk-orange)]/10 rounded-full blur-[120px] -z-10 animate-pulse"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-[var(--whisk-cyan)]/10 rounded-full blur-[120px] -z-10 animate-pulse"></div>
-
-      {/* Main Container */}
-      <div className="w-full max-w-4xl bg-white rounded-[3rem] shadow-2xl p-6 md:p-12 border-4 border-white flex flex-col items-center relative z-10 transition-all">
-        
-        {/* Core Spinning Loader Headers */}
-        <div className="flex flex-col items-center mb-8 text-center">
-          <div className="relative mb-6">
-            <div className="w-20 h-20 border-6 border-slate-100 rounded-full"></div>
-            <div className="absolute inset-0 w-20 h-20 border-6 border-t-[var(--whisk-orange)] border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin"></div>
-            <Plane className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 text-[var(--whisk-orange)] animate-pulse" />
-          </div>
-          <h3 className="text-3xl md:text-4xl font-black text-[var(--whisk-navy)] mb-2 tracking-tighter">
-            Sit tight, bestie!
-          </h3>
-          <p className="text-md text-[var(--whisk-pink)] font-black uppercase tracking-widest animate-pulse">
-            {statusText || "Mapping out your dream escape..."}
-          </p>
-        </div>
-
-        {/* Dynamic Presentation Card with Travel Photo and Insider Tip */}
-        <div className="w-full bg-slate-50/50 rounded-[2.5rem] border border-slate-100 p-4 md:p-8 flex flex-col md:flex-row gap-8 items-center overflow-hidden min-h-[380px] md:min-h-[310px]">
-          
-          {/* Photo Section */}
-          <div className="w-full md:w-2/5 aspect-[4/3] md:aspect-square relative rounded-[2rem] overflow-hidden shadow-lg shrink-0">
-            <img 
-              src={activePhoto.image} 
-              alt={activePhoto.location} 
-              className={`w-full h-full object-cover transition-all duration-750 transform scale-100 ${fadeState === 'out' ? 'opacity-0 scale-95 blur-sm' : 'opacity-100 scale-100'}`} 
-            />
-            {/* Soft gradient overlay */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent"></div>
-            {/* Location tag */}
-            <div className="absolute bottom-4 left-4 right-4 flex items-center gap-2 text-white">
-              <MapPin className="w-5 h-5 text-[var(--whisk-cyan)] shrink-0" />
-              <span className="font-extrabold tracking-tight text-sm drop-shadow-md">{activePhoto.location}</span>
+    <div className="min-h-screen whisk-ombre-bg flex flex-col items-center justify-center px-4 py-8 sm:p-10 relative overflow-hidden">
+      <div className="w-full max-w-4xl bg-white/95 backdrop-blur-md rounded-[2.5rem] shadow-2xl border-2 border-white overflow-hidden flex flex-col relative z-10">
+        {/* Compact Header */}
+        <div className="px-6 py-4 flex items-center justify-between gap-4 border-b border-slate-100">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="relative w-10 h-10 shrink-0 flex items-center justify-center">
+              <WhiskLogo size={38} className="drop-shadow-xs" />
             </div>
-          </div>
-
-          {/* Tips Section */}
-          <div className="flex-1 flex flex-col justify-between h-full py-2">
-            <div className={`transition-all duration-500 ${fadeState === 'out' ? 'opacity-0 translate-y-2' : 'opacity-100 translate-y-0'}`}>
-              <div className="inline-flex items-center gap-2 bg-[var(--whisk-orange)]/10 text-[var(--whisk-orange)] px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest mb-4">
-                <Sparkles className="w-3.5 h-3.5" /> Bestie Insider Tip
-              </div>
-              <h4 className="text-2xl font-black text-[var(--whisk-navy)] tracking-tight mb-3">
-                Wanderlust Inspiration
-              </h4>
-              <p className="text-slate-600 text-sm md:text-base font-medium leading-relaxed italic">
-                "{activePhoto.tip}"
+            <div className="min-w-0">
+              <h3 className="text-lg sm:text-xl font-black tracking-tight whisk-text-ombre truncate">
+                Building Your Itinerary
+              </h3>
+              <p className="text-xs font-semibold text-slate-500 truncate">
+                {statusText || 'Putting your stops and bookings together...'}
               </p>
             </div>
+          </div>
+          <span className="text-xs font-bold text-slate-400 tabular-nums whitespace-nowrap shrink-0">
+            {photoIndex + 1} / {LOADING_PHOTOS.length}
+          </span>
+        </div>
 
-            {/* Slider Controls and Timeline indicator */}
-            <div className="mt-8 flex items-center justify-between">
-              {/* Carousel Arrows */}
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={handlePrev}
-                  className="p-3 bg-white hover:bg-slate-100 border border-slate-200/60 rounded-full transition-all text-slate-500 hover:text-[var(--whisk-orange)] shadow-sm hover:scale-105"
-                >
-                  <ChevronRight className="w-5 h-5 rotate-180" />
-                </button>
-                <button 
-                  onClick={handleNext}
-                  className="p-3 bg-white hover:bg-slate-100 border border-slate-200/60 rounded-full transition-all text-slate-500 hover:text-[var(--whisk-orange)] shadow-sm hover:scale-105"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
+        {/* 90% Photo : 10% Quick Fact Visual Container */}
+        <div className="flex flex-col h-[500px] sm:h-[560px]">
+          {/* 90% Photo Viewport */}
+          <div className="relative flex-[9] min-h-0 w-full overflow-hidden bg-slate-900">
+            <img
+              src={activePhoto.image}
+              alt={activePhoto.location}
+              className={`w-full h-full object-cover transition-all duration-500 ${
+                fadeState === 'out' ? 'opacity-0 scale-105' : 'opacity-100 scale-100'
+              }`}
+            />
+            <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/65 via-black/20 to-transparent pointer-events-none" />
+
+            <div className="absolute bottom-4 left-5 right-5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-white">
+                <MapPin className="w-4 h-4 text-[var(--whisk-cyan)] shrink-0" />
+                <span className="font-extrabold tracking-tight text-sm sm:text-base drop-shadow">
+                  {activePhoto.location}
+                </span>
               </div>
 
-              {/* Progress and Indicators */}
-              <div className="flex items-center gap-3">
-                <div className="flex gap-1.5">
-                  {LOADING_PHOTOS.map((_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => {
-                        setFadeState('out');
-                        setTimeout(() => {
-                          setPhotoIndex(i);
-                          setFadeState('in');
-                          setProgress(0);
-                        }, 300);
-                      }}
-                      className={`h-2.5 rounded-full transition-all duration-300 ${i === photoIndex ? 'bg-[var(--whisk-orange)] w-6' : 'bg-slate-200 w-2.5'}`}
-                    ></button>
-                  ))}
-                </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrev}
+                  aria-label="Previous photo"
+                  className="p-2 bg-black/45 hover:bg-black/65 text-white rounded-full backdrop-blur-xs transition-colors cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4 rotate-180" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  aria-label="Next photo"
+                  className="p-2 bg-black/45 hover:bg-black/65 text-white rounded-full backdrop-blur-xs transition-colors cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
             </div>
           </div>
+
+          {/* 10% Quick Fact Strip */}
+          <div className="flex-[1] min-h-[58px] bg-white px-6 py-3 flex flex-col justify-center border-t border-slate-100">
+            <p
+              className={`text-xs sm:text-sm font-semibold text-[var(--whisk-navy)] leading-snug line-clamp-2 transition-opacity duration-300 ${
+                fadeState === 'out' ? 'opacity-0' : 'opacity-100'
+              }`}
+            >
+              {activePhoto.fact}
+            </p>
+          </div>
         </div>
 
-        {/* Bottom indicator progress bar */}
-        <div className="w-full bg-slate-100 h-1.5 rounded-full mt-8 overflow-hidden">
-          <div 
-            className="h-full bg-gradient-to-r from-[var(--whisk-orange)] to-[var(--whisk-pink)] rounded-full transition-all duration-50"
+        {/* Slim Progress Line */}
+        <div className="w-full bg-slate-100 h-1 overflow-hidden">
+          <div
+            className="h-full vibrant-gradient transition-all duration-75"
             style={{ width: `${progress}%` }}
-          ></div>
+          />
         </div>
-        
-        <p className="text-[11px] font-black uppercase text-slate-400 tracking-widest mt-4">
-          Whisk Travel Engine • Custom Curated Adventures
-        </p>
       </div>
     </div>
   );
 };
 
+function matchRecommendationsToDays(itinerary: TripItinerary): Map<number, Recommendation[]> {
+  const byDay = new Map<number, Recommendation[]>();
+  const days = itinerary.days || [];
+  for (const d of days) {
+    byDay.set(d.dayNumber, []);
+  }
+  if (days.length === 0) return byDay;
+
+  const firstDayNum = days[0].dayNumber;
+  const assigned = new Set<number>();
+
+  (itinerary.recommendations || []).forEach((rec, recIdx) => {
+    const explicitDays = Array.isArray(rec.dayNumbers)
+      ? rec.dayNumbers.filter((n) => byDay.has(n))
+      : [];
+
+    if (explicitDays.length > 0) {
+      explicitDays.forEach((dNum) => byDay.get(dNum)!.push(rec));
+      assigned.add(recIdx);
+      return;
+    }
+
+    if (rec.type === 'flight' || rec.type === 'hotel') {
+      byDay.get(firstDayNum)!.push(rec);
+      assigned.add(recIdx);
+      return;
+    }
+
+    // Fallback: match recommendation name against activity location or description
+    const recTokens = rec.name
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length >= 4);
+
+    let matchedDay: number | null = null;
+    for (const day of days) {
+      const hay = `${day.theme} ${(day.activities || [])
+        .map((a) => `${a.location} ${a.description}`)
+        .join(' ')}`.toLowerCase();
+      if (
+        hay.includes(rec.name.toLowerCase()) ||
+        (recTokens.length > 0 && recTokens.some((tok) => hay.includes(tok)))
+      ) {
+        matchedDay = day.dayNumber;
+        break;
+      }
+    }
+
+    if (matchedDay !== null) {
+      byDay.get(matchedDay)!.push(rec);
+      assigned.add(recIdx);
+    }
+  });
+
+  // Distribute any remaining unmatched tours/restaurants evenly across days so none are orphaned
+  let cursor = 0;
+  (itinerary.recommendations || []).forEach((rec, recIdx) => {
+    if (!assigned.has(recIdx)) {
+      const targetDay = days[cursor % days.length].dayNumber;
+      byDay.get(targetDay)!.push(rec);
+      cursor += 1;
+    }
+  });
+
+  return byDay;
+}
+
+function matchSourcesToDay(
+  day: DayPlan,
+  sources: GroundingSource[]
+): GroundingSource[] {
+  if (!sources.length) return [];
+  const dayText = `${day.theme} ${(day.activities || [])
+    .map((a) => `${a.location} ${a.description}`)
+    .join(' ')}`.toLowerCase();
+
+  const matched = sources.filter((src) => {
+    const titleWords = (src.title || '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length >= 4);
+    return titleWords.some((w) => dayText.includes(w));
+  });
+
+  return matched.slice(0, 4);
+}
+
 const ItineraryDisplay = ({ 
   itinerary,
   hasActiveSubscription,
-  onUnlock, 
-  handleViewPost, 
-  generatingBlogPostId,
+  onUnlock,
   savedPlaceNames,
   onSavePlace,
   onCoordinatesHydrated,
-  onSignInRequest,
 }: { 
   itinerary: TripItinerary;
   hasActiveSubscription: boolean;
   onRateActivity: any; 
   onRateOverall: any; 
   onUnlock: () => void; 
-  handleViewPost: (post: BlogPost) => void; 
-  generatingBlogPostId: string | null;
   savedPlaceNames: Set<string>;
   onSavePlace: any;
   onCoordinatesHydrated?: (itineraryId: string, updatedDays: DayPlan[]) => void;
-  onSignInRequest: () => void | Promise<void>;
 }) => {
-  const mapsSources = (itinerary.groundingSources || []).filter((s: GroundingSource) => s.sourceType === 'maps');
-  const searchSources = (itinerary.groundingSources || []).filter((s: GroundingSource) => s.sourceType === 'search');
+  const [selectedMapDay, setSelectedMapDay] = React.useState<number | 'all'>('all');
+  const allSources = itinerary.groundingSources || [];
+  const mapsSources = allSources.filter((s: GroundingSource) => s.sourceType === 'maps');
   const isUnlocked = Boolean(itinerary.unlocked || hasActiveSubscription);
   const freeVisibleCount = itinerary.days.length <= 1 ? 1 : Math.max(1, Math.floor(itinerary.days.length / 2));
 
+  const dayBookingsMap = React.useMemo(
+    () => matchRecommendationsToDays(itinerary),
+    [itinerary]
+  );
+
+  const dayNumbers = React.useMemo(
+    () => (itinerary.days || []).map((d) => d.dayNumber),
+    [itinerary.days]
+  );
+
+  const jumpToDay = (dayNum: number) => {
+    setSelectedMapDay(dayNum);
+    const el = document.getElementById(`itinerary-day-${dayNum}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const buildActivityMapsUrl = (activity: TripItinerary['days'][number]['activities'][number]) => {
+    if (activity.mapsUri) return activity.mapsUri;
+    const matchedMap = mapsSources.find((m) =>
+      m.title.toLowerCase().includes(activity.location.toLowerCase()) ||
+      activity.location.toLowerCase().includes(m.title.toLowerCase())
+    );
+    if (matchedMap?.uri) return matchedMap.uri;
+    const query = encodeURIComponent(
+      activity.formattedAddress || `${activity.location}, ${itinerary.destination}`
+    );
+    if (activity.placeId) {
+      return `https://www.google.com/maps/search/?api=1&query=${query}&query_place_id=${encodeURIComponent(activity.placeId)}`;
+    }
+    return `https://www.google.com/maps/search/?api=1&query=${query}`;
+  };
+
   return (
-    <div className="max-w-7xl mx-auto px-6 sm:px-10 py-20 animate-in slide-in-from-bottom-10 duration-700">
-       <div className="mb-16 text-center">
-          <div className="inline-flex items-center gap-2 text-[var(--whisk-terracotta)] text-xs font-bold uppercase tracking-widest mb-4">
-            <Globe className="w-4 h-4" />
-            <span>Search & Google Maps Grounded</span>
+    <div className="max-w-7xl mx-auto px-6 sm:px-10 py-16 animate-in slide-in-from-bottom-10 duration-700">
+       <div className="mb-14 text-center">
+          <div className="inline-flex flex-wrap items-center justify-center gap-2 text-[var(--whisk-terracotta)] text-xs font-bold uppercase tracking-widest mb-4">
+            <Compass className="w-4 h-4" />
+            <span>Private Whisk Itinerary</span>
+            {formatTripDateRange(itinerary.startDate, itinerary.endDate) && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{formatTripDateRange(itinerary.startDate, itinerary.endDate)}</span>
+              </>
+            )}
+            {itinerary.departureAirport && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>From {itinerary.departureAirport}</span>
+              </>
+            )}
             <span aria-hidden="true">·</span>
             <span>{isUnlocked ? 'Full Access Unlocked' : `Free Preview (${freeVisibleCount} of ${itinerary.days.length} days)`}</span>
           </div>
-          <h1 className="text-5xl md:text-7xl font-black text-[var(--whisk-navy)] mb-6 tracking-tighter leading-tight text-balance">{itinerary.title}</h1>
-          <p className="text-xl text-slate-500 font-medium max-w-3xl mx-auto leading-relaxed italic">"{itinerary.summary}"</p>
+          <h1 className="text-4xl sm:text-6xl md:text-7xl font-black whisk-text-ombre mb-6 tracking-tighter leading-tight text-balance">
+            {itinerary.title}
+          </h1>
+          <p className="text-lg sm:text-xl text-slate-600 font-medium max-w-3xl mx-auto leading-relaxed italic">
+            "{itinerary.summary}"
+          </p>
        </div>
 
-       <div className="grid lg:grid-cols-3 gap-12">
-          <div className="lg:col-span-2 space-y-12">
+       <div className="grid lg:grid-cols-3 gap-10">
+          <div className="lg:col-span-2 space-y-10">
             <ItineraryMap
               itinerary={itinerary}
               onCoordinatesHydrated={onCoordinatesHydrated}
+              selectedDay={selectedMapDay}
+              onSelectDay={(nextDay) => {
+                setSelectedMapDay(nextDay);
+                if (typeof nextDay === 'number') {
+                  const el = document.getElementById(`itinerary-day-${nextDay}`);
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+              }}
             />
+
             <WeatherForecast destination={itinerary.destination} />
+
             {itinerary.days.map((day, dIdx) => {
               const isDayLocked = !isUnlocked && dIdx >= freeVisibleCount;
+              const dayBookings = dayBookingsMap.get(day.dayNumber) || [];
+              const daySources = matchSourcesToDay(day, allSources);
+              const prevDayNum = dIdx > 0 ? dayNumbers[dIdx - 1] : null;
+              const nextDayNum = dIdx < dayNumbers.length - 1 ? dayNumbers[dIdx + 1] : null;
+              const isFocusedDay = selectedMapDay === day.dayNumber;
+
               return (
-              <div key={dIdx} className="bg-white rounded-[3.5rem] p-8 md:p-14 shadow-xl border border-slate-100 relative overflow-hidden group">
+              <div
+                key={dIdx}
+                id={`itinerary-day-${day.dayNumber}`}
+                className={`bg-white rounded-[3rem] p-7 sm:p-12 shadow-xl border relative overflow-hidden transition-all scroll-mt-24 ${
+                  isFocusedDay ? 'border-[var(--whisk-orange)] ring-2 ring-[var(--whisk-orange)]/15' : 'border-slate-100'
+                }`}
+              >
                  <div className="relative z-10">
-                    <div className="flex items-center gap-5 mb-10">
-                       <div className="vibrant-gradient w-16 h-16 rounded-2xl flex items-center justify-center text-white text-2xl font-black shadow-lg tabular-nums">
-                          {day.dayNumber}
+                    <div className="flex flex-wrap items-center justify-between gap-4 mb-9">
+                       <div className="flex items-center gap-4">
+                          <div className="vibrant-gradient w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center text-white text-2xl font-black shadow-lg tabular-nums shrink-0">
+                             {day.dayNumber}
+                          </div>
+                          <div>
+                             <div className="text-xs font-bold text-[var(--whisk-terracotta)] uppercase tracking-widest mb-1">
+                               Day {day.dayNumber}
+                               {formatTripDayDate(day.date) ? ` · ${formatTripDayDate(day.date)}` : ''}
+                             </div>
+                             <h2 className="text-2xl sm:text-3xl font-black text-[var(--whisk-navy)] tracking-tight">
+                               {day.theme}
+                             </h2>
+                          </div>
                        </div>
-                       <div>
-                          <div className="text-xs font-bold text-[var(--whisk-terracotta)] uppercase tracking-widest mb-1">Day {day.dayNumber}</div>
-                          <h2 className="text-3xl font-black text-[var(--whisk-navy)] tracking-tight">{day.theme}</h2>
-                       </div>
+
+                       <button
+                         type="button"
+                         onClick={() => {
+                           setSelectedMapDay(day.dayNumber);
+                           window.scrollTo({ top: 180, behavior: 'smooth' });
+                         }}
+                         className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-xs font-bold text-[var(--whisk-navy)] cursor-pointer whitespace-nowrap shrink-0"
+                       >
+                         <MapPin className="w-3.5 h-3.5 text-[var(--whisk-orange)]" />
+                         View Day {day.dayNumber} Route
+                       </button>
                     </div>
                     
                     <div className={`space-y-8 transition-all duration-500 ${isDayLocked ? 'blur-md pointer-events-none select-none opacity-35' : ''}`}>
-                       {day.activities.map((activity, aIdx) => (
-                         <div key={aIdx} className="flex gap-6 relative">
-                            {aIdx < day.activities.length - 1 && <div className="absolute left-5 top-14 bottom-0 w-0.5 bg-slate-100"></div>}
-                            <div className="bg-slate-50 p-3.5 rounded-2xl h-fit border border-slate-100 shrink-0">
-                               <Clock className="w-5 h-5 text-[var(--whisk-azure)]" />
-                            </div>
-                            <div className="space-y-2">
-                               <span className="text-xs font-bold text-[var(--whisk-azure)] uppercase tracking-wider">{activity.time}</span>
-                               <h4 className="text-xl font-black text-[var(--whisk-navy)] tracking-tight">{activity.location}</h4>
-                               <p className="text-slate-600 text-sm md:text-base font-medium leading-relaxed">{activity.description}</p>
-                            </div>
+                       {day.activities.map((activity, aIdx) => {
+                         const activityMapUrl = buildActivityMapsUrl(activity);
+                         const isSpotSaved = savedPlaceNames.has(activity.location.toLowerCase());
+                         return (
+                           <div key={aIdx} className="flex gap-4 sm:gap-6 relative">
+                              {aIdx < day.activities.length - 1 && (
+                                <div className="absolute left-5 top-14 bottom-0 w-0.5 bg-slate-100" />
+                              )}
+                              <div className="bg-slate-50 p-3.5 rounded-2xl h-fit border border-slate-100 shrink-0">
+                                 <Clock className="w-5 h-5 text-[var(--whisk-azure)]" />
+                              </div>
+                              <div className="flex-1 min-w-0 space-y-2">
+                                 <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <span className="text-xs font-bold text-[var(--whisk-azure)] uppercase tracking-wider">
+                                        {activity.time}
+                                      </span>
+                                      <h4 className="text-xl font-black text-[var(--whisk-navy)] tracking-tight">
+                                        {activity.location}
+                                      </h4>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        onSavePlace({
+                                          name: activity.location,
+                                          type: 'place',
+                                          destination: itinerary.destination,
+                                          description: activity.insiderTip || activity.description,
+                                          mapsUri: activityMapUrl,
+                                        })
+                                      }
+                                      title={isSpotSaved ? 'Saved to My Places' : 'Save spot'}
+                                      className={`p-2 rounded-xl transition-colors shrink-0 cursor-pointer ${
+                                        isSpotSaved
+                                          ? 'bg-emerald-100 text-emerald-700'
+                                          : 'bg-slate-50 text-slate-400 hover:text-[var(--whisk-orange)]'
+                                      }`}
+                                    >
+                                      {isSpotSaved ? <Check className="w-4 h-4" /> : <Bookmark className="w-4 h-4" />}
+                                    </button>
+                                 </div>
+
+                                 <p className="text-slate-600 text-sm md:text-base font-medium leading-relaxed">
+                                   {activity.description}
+                                 </p>
+
+                                 {/* Embedded Verified Maps Address + Local Intel right inside the activity */}
+                                 <div className="bg-slate-50/90 border border-slate-100 rounded-2xl px-4 py-3 space-y-1.5 text-xs">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                       <span className="inline-flex items-center gap-1.5 font-semibold text-slate-600 min-w-0">
+                                          <MapPin className="w-3.5 h-3.5 text-[var(--whisk-orange)] shrink-0" />
+                                          <span className="truncate">
+                                            {activity.formattedAddress || `${activity.location}, ${itinerary.destination}`}
+                                          </span>
+                                       </span>
+                                       <a
+                                         href={activityMapUrl}
+                                         target="_blank"
+                                         rel="noopener noreferrer"
+                                         className="inline-flex items-center gap-1 font-bold text-[var(--whisk-orange)] hover:underline whitespace-nowrap shrink-0"
+                                       >
+                                         Google Maps <ExternalLink className="w-3 h-3" />
+                                       </a>
+                                    </div>
+                                    {activity.insiderTip && (
+                                      <p className="text-slate-500 font-medium leading-relaxed">
+                                        <span className="font-bold text-[var(--whisk-navy)]">Local intel: </span>
+                                        {activity.insiderTip}
+                                      </p>
+                                    )}
+                                 </div>
+                              </div>
+                           </div>
+                         );
+                       })}
+
+                       {/* Inline Verified Search Sources matched to this Day */}
+                       {daySources.length > 0 && (
+                         <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
+                            <span className="font-bold uppercase tracking-wider text-slate-400 mr-1">
+                              Verified Intel:
+                            </span>
+                            {daySources.map((src, sIdx) => (
+                              <a
+                                key={sIdx}
+                                href={src.uri}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-sky-50 text-sky-700 font-semibold hover:bg-sky-100 transition-colors"
+                              >
+                                <Globe className="w-3 h-3 shrink-0" />
+                                <span className="max-w-[180px] truncate">{src.title}</span>
+                                <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                              </a>
+                            ))}
                          </div>
-                       ))}
+                       )}
+
+                       {/* Day-Attached Booking Partners */}
+                       {dayBookings.length > 0 && (
+                         <div className="pt-6 border-t border-slate-100 space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                               <h3 className="text-xs font-black uppercase tracking-widest text-[var(--whisk-terracotta)]">
+                                 Day {day.dayNumber} Partner Bookings
+                               </h3>
+                               {!isUnlocked && (
+                                 <button
+                                   type="button"
+                                   onClick={onUnlock}
+                                   className="text-xs font-bold text-[var(--whisk-terracotta)] hover:underline cursor-pointer"
+                                 >
+                                   Unlock with Whisk Passport
+                                 </button>
+                               )}
+                            </div>
+
+                            {isUnlocked ? (
+                              <div className="grid sm:grid-cols-2 gap-3">
+                                {dayBookings.map((rec, bIdx) => {
+                                  const isSaved = savedPlaceNames.has(rec.name.toLowerCase());
+                                  return (
+                                    <div
+                                      key={bIdx}
+                                      className="bg-slate-50 rounded-2xl p-4 border border-slate-200/70 flex flex-col justify-between gap-3"
+                                    >
+                                      <div>
+                                        <div className="flex items-center justify-between gap-2 mb-2">
+                                          <span className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-[var(--whisk-terracotta)]">
+                                            {rec.type === 'hotel' ? (
+                                              <Hotel className="w-3.5 h-3.5" />
+                                            ) : rec.type === 'restaurant' ? (
+                                              <Utensils className="w-3.5 h-3.5" />
+                                            ) : rec.type === 'flight' ? (
+                                              <Plane className="w-3.5 h-3.5" />
+                                            ) : (
+                                              <Camera className="w-3.5 h-3.5" />
+                                            )}
+                                            {rec.type}
+                                          </span>
+                                          <div className="flex items-center gap-1.5">
+                                            {rec.price && (
+                                              <span className="text-xs font-bold text-[var(--whisk-azure)] tabular-nums">
+                                                {rec.price}
+                                              </span>
+                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                onSavePlace({
+                                                  name: rec.name,
+                                                  type: rec.type,
+                                                  destination: itinerary.destination,
+                                                  description: rec.description,
+                                                  price: rec.price,
+                                                  availability: rec.availability,
+                                                  affiliateUrl: rec.affiliateUrl,
+                                                })
+                                              }
+                                              className={`p-1.5 rounded-lg cursor-pointer ${
+                                                isSaved
+                                                  ? 'bg-emerald-100 text-emerald-700'
+                                                  : 'bg-white text-slate-400 hover:text-[var(--whisk-fuchsia)]'
+                                              }`}
+                                              title={isSaved ? 'Saved' : 'Save booking'}
+                                            >
+                                              {isSaved ? <Check className="w-3.5 h-3.5" /> : <Heart className="w-3.5 h-3.5" />}
+                                            </button>
+                                          </div>
+                                        </div>
+                                        <div className="font-black text-sm text-[var(--whisk-navy)] leading-snug">
+                                          {rec.name}
+                                        </div>
+                                        {rec.type === 'flight' && rec.departureAirport && (
+                                          <div className="text-[11px] font-semibold text-slate-500 mt-0.5">
+                                            Departing from {rec.departureAirport}
+                                          </div>
+                                        )}
+                                        {rec.availability && (
+                                          <div className="text-[11px] font-semibold text-amber-700 mt-1">
+                                            {rec.availability}
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      <a
+                                        href={rec.affiliateUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="w-full vibrant-gradient text-white py-2.5 px-3 rounded-xl font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-1.5 hover:opacity-95 transition-opacity"
+                                      >
+                                        Book {rec.type === 'flight' ? 'Flight' : 'Partner'} <ExternalLink className="w-3.5 h-3.5" />
+                                      </a>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+                                <span className="font-semibold text-slate-600">
+                                  {dayBookings.length} partner booking{dayBookings.length === 1 ? '' : 's'} matched for Day {day.dayNumber} ({dayBookings.map((b) => b.type).join(', ')})
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={onUnlock}
+                                  className="vibrant-gradient text-white px-3.5 py-2 rounded-xl font-bold text-[11px] uppercase tracking-wider cursor-pointer"
+                                >
+                                  Unlock Bookings
+                                </button>
+                              </div>
+                            )}
+                         </div>
+                       )}
+
+                       {/* Day-to-Day Previous / Next Connector Footer */}
+                       {(prevDayNum !== null || nextDayNum !== null) && (
+                         <div className="pt-5 border-t border-slate-100 flex items-center justify-between gap-3">
+                            {prevDayNum !== null ? (
+                              <button
+                                type="button"
+                                onClick={() => jumpToDay(prevDayNum)}
+                                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-[var(--whisk-navy)] cursor-pointer"
+                              >
+                                <ChevronRight className="w-4 h-4 rotate-180" />
+                                Previous: Day {prevDayNum}
+                              </button>
+                            ) : (
+                              <span />
+                            )}
+
+                            {nextDayNum !== null && (
+                              <button
+                                type="button"
+                                onClick={() => jumpToDay(nextDayNum)}
+                                className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--whisk-terracotta)] hover:underline cursor-pointer"
+                              >
+                                Next: Day {nextDayNum}
+                                <ChevronRight className="w-4 h-4" />
+                              </button>
+                            )}
+                         </div>
+                       )}
                     </div>
 
                     {isDayLocked && (
@@ -1666,103 +2072,9 @@ const ItineraryDisplay = ({
               </div>
               );
             })}
-
-            {/* Google Maps & Search Grounding Citations Panel */}
-            {(mapsSources.length > 0 || searchSources.length > 0 || itinerary.mapsOverview) && (
-              <div className="bg-white rounded-[3rem] p-10 shadow-xl border-4 border-white space-y-6">
-                <div className="flex items-center gap-3">
-                  <div className="vibrant-gradient p-3 rounded-2xl text-white">
-                    <MapPin className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-black text-[var(--whisk-navy)] tracking-tight">Verified Google Maps & Search Intel</h3>
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Real-world sources backing this trip</p>
-                  </div>
-                </div>
-
-                {itinerary.mapsOverview && (
-                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap bg-slate-50 p-5 rounded-2xl border border-slate-100">
-                    {itinerary.mapsOverview}
-                  </p>
-                )}
-
-                {mapsSources.length > 0 && (
-                  <div className="space-y-3">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-[var(--whisk-orange)]">Google Maps Places</h4>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      {mapsSources.map((src, i) => {
-                        const isSaved = savedPlaceNames.has(src.title.toLowerCase());
-                        return (
-                          <div key={i} className="bg-orange-50/50 border border-orange-100 rounded-2xl p-4 flex flex-col justify-between gap-2">
-                            <div className="flex items-start justify-between gap-2">
-                              <a href={src.uri} target="_blank" rel="noopener noreferrer" className="font-black text-sm text-[var(--whisk-navy)] hover:text-[var(--whisk-orange)] flex items-center gap-1.5">
-                                <MapPin className="w-4 h-4 text-[var(--whisk-orange)] shrink-0" />
-                                <span>{src.title}</span>
-                                <ExternalLink className="w-3 h-3 shrink-0" />
-                              </a>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  onSavePlace({
-                                    name: src.title,
-                                    type: 'place',
-                                    destination: itinerary.destination,
-                                    description: src.snippet || `Verified Google Maps spot in ${itinerary.destination}`,
-                                    mapsUri: src.uri,
-                                  })
-                                }
-                                className={`p-1.5 rounded-lg transition-all shrink-0 cursor-pointer ${
-                                  isSaved ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-slate-400 hover:text-[var(--whisk-orange)]'
-                                }`}
-                                title={isSaved ? 'Saved' : 'Save place'}
-                              >
-                                {isSaved ? <Check className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
-                              </button>
-                            </div>
-                            {src.snippet && <p className="text-xs text-slate-500 italic line-clamp-2">"{src.snippet}"</p>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {searchSources.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-sky-600">Google Search Sources</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {searchSources.map((src, i) => (
-                        <a
-                          key={i}
-                          href={src.uri}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-sky-50 text-sky-700 text-xs font-bold hover:bg-sky-100 transition-colors"
-                        >
-                          <Globe className="w-3.5 h-3.5" />
-                          <span className="max-w-[200px] truncate">{src.title}</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <TripToolkit
-              itinerary={itinerary}
-              onSignInRequest={onSignInRequest}
-            />
-
-            <PlacesExplorer
-              defaultDestination={itinerary.destination}
-              savedPlaceNames={savedPlaceNames}
-              onSavePlace={onSavePlace}
-            />
           </div>
           
-          <div className="space-y-12">
+          <div className="space-y-10">
              <ActionSidebar
                recommendations={itinerary.recommendations}
                destination={itinerary.destination}
@@ -1771,42 +2083,51 @@ const ItineraryDisplay = ({
                unlocked={isUnlocked}
                onOpenPassport={onUnlock}
              />
-             {itinerary.blogPost ? (
-                <div onClick={() => handleViewPost(itinerary.blogPost!)} className="bg-white rounded-[3rem] p-10 shadow-xl border-4 border-white hover:border-[var(--whisk-orange)]/20 transition-all group cursor-pointer">
-                   <h4 className="text-2xl font-black text-[var(--whisk-navy)] mb-6 tracking-tight flex items-center gap-2">
-                     Our Deep Dive <ArrowRight className="w-5 h-5 text-[var(--whisk-orange)] group-hover:translate-x-2 transition-transform" />
-                   </h4>
-                   <img src={itinerary.blogPost.imageUrl} referrerPolicy="no-referrer" className="w-full h-48 object-cover rounded-3xl mb-8" alt="Blog" />
-                   <h5 className="font-black text-xl mb-4 text-[var(--whisk-navy)] leading-tight">{itinerary.blogPost.title}</h5>
-                   <p className="text-slate-500 text-sm font-medium mb-8 line-clamp-2">{itinerary.blogPost.metaDescription}</p>
-                </div>
-             ) : generatingBlogPostId === itinerary.id ? (
-                <div className="bg-white rounded-[3rem] p-10 shadow-xl border-4 border-dashed border-slate-200 animate-pulse">
-                   <h4 className="text-2xl font-black text-[var(--whisk-navy)] mb-3 tracking-tight flex items-center gap-2">
-                     <Sparkles className="w-6 h-6 text-[var(--whisk-orange)]" />
-                     Writing Field Guide...
-                   </h4>
-                   <p className="text-slate-400 text-sm font-medium mb-6 leading-relaxed">Curating a custom travel story and insider tips for this adventure...</p>
-                   <div className="w-full h-48 bg-slate-100/80 rounded-3xl mb-8 flex items-center justify-center relative overflow-hidden">
-                     <span className="text-slate-400 text-xs font-bold uppercase tracking-widest z-10">Preparing Guide...</span>
-                   </div>
-                </div>
-             ) : null}
           </div>
        </div>
     </div>
   );
 };
 
-const TripPlannerForm = ({ onGenerate, loading }: any) => {
+const TripPlannerForm = ({
+  onGenerate,
+  loading,
+  savedSpotCount = 0,
+}: {
+  onGenerate: (params: SearchParams) => void;
+  loading: boolean;
+  savedSpotCount?: number;
+}) => {
+  const todayIso = React.useMemo(() => toLocalIsoDate(new Date()), []);
+
   const [params, setParams] = React.useState<SearchParams>({ 
     destination: '', 
+    startDate: undefined,
+    endDate: undefined,
     duration: '3 days', 
     interests: [], 
     budget: 'Mid-range', 
     pace: 'Moderate', 
-    accessibility: [] 
+    accessibility: [],
+    departureLocation: '',
+    departureAirport: '',
+    publishPublicGuide: true,
   });
+  const [locatingAirport, setLocatingAirport] = React.useState(false);
+  const [airportNote, setAirportNote] = React.useState<string | null>(null);
+
+  const handleDateRangeChange = (next: {
+    startDate?: string;
+    endDate?: string;
+    duration?: string;
+  }) => {
+    setParams((prev) => ({
+      ...prev,
+      startDate: next.startDate,
+      endDate: next.endDate,
+      duration: next.duration || prev.duration,
+    }));
+  };
   
   const toggleInterest = (interest: string) => setParams(prev => ({ 
     ...prev, 
@@ -1818,6 +2139,42 @@ const TripPlannerForm = ({ onGenerate, loading }: any) => {
     accessibility: prev.accessibility.includes(item) ? prev.accessibility.filter(i => i !== item) : [...prev.accessibility, item] 
   }));
 
+  const handleFindNearestAirport = () => {
+    if (!('geolocation' in navigator)) {
+      setAirportNote('Location services are unavailable in this browser. Type your departure city or airport code.');
+      return;
+    }
+    setLocatingAirport(true);
+    setAirportNote(null);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const nearest = await findNearestAirport({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+          setParams((prev) => ({
+            ...prev,
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            departureLocation: `${nearest.city}, ${nearest.country}`,
+            departureAirport: `${nearest.code} — ${nearest.city}`,
+          }));
+          setAirportNote(`Nearest major airport: ${nearest.code} (${nearest.name}, ~${nearest.distanceKm} km away)`);
+        } catch {
+          setAirportNote('Could not match your nearest airport automatically. Enter your city or 3-letter airport code.');
+        } finally {
+          setLocatingAirport(false);
+        }
+      },
+      () => {
+        setLocatingAirport(false);
+        setAirportNote('Location permission was denied. You can still type your departure city or airport code.');
+      },
+      { timeout: 7000 }
+    );
+  };
+
   const accessibilityOptions = [
     'Wheelchair Access',
     'Limited Walking',
@@ -1828,54 +2185,113 @@ const TripPlannerForm = ({ onGenerate, loading }: any) => {
     'Low Sensory'
   ];
 
-  return (
-    <div className="relative py-20 md:py-28 overflow-hidden bg-gradient-to-tr from-[#E05A47]/10 via-[#F59E0B]/5 to-[#0284C7]/10 transition-all duration-700">
-      <img src={LANDMARK_POLAROIDS[2].url} referrerPolicy="no-referrer" className="absolute inset-0 w-full h-full object-cover opacity-[0.06] pointer-events-none" alt="Mediterranean Travel Backdrop" />
+  const hasValidDateRange = Boolean(params.startDate && params.endDate);
 
+  return (
+    <div className="relative py-16 md:py-24 overflow-hidden whisk-ombre-bg transition-all duration-700">
       <div className="max-w-5xl mx-auto px-6 relative z-10">
-        <div className="bg-white/95 backdrop-blur-md rounded-[4rem] p-10 md:p-20 shadow-2xl border-4 border-white/50 relative">
-          <div className="mb-12 text-center">
-            <div className="inline-flex items-center gap-2 bg-[var(--whisk-orange)]/10 text-[var(--whisk-orange)] px-6 py-2 rounded-full text-[12px] font-black uppercase tracking-widest mb-8">Trip Planner</div>
-            <h2 className="text-6xl font-black mb-4 tracking-tighter text-[var(--whisk-navy)]">Where next, bestie?</h2>
-            <p className="text-slate-500 font-medium text-xl">Give me the vibes, and I'll do the rest.</p>
+        <div className="bg-white/95 backdrop-blur-md rounded-[3.5rem] p-8 sm:p-14 md:p-18 shadow-2xl border-2 border-white relative">
+          <div className="mb-10 text-center">
+            <div className="inline-flex items-center gap-2 text-[var(--whisk-terracotta)] text-xs font-black uppercase tracking-widest mb-4">
+              <WhiskLogo size={26} />
+              <span>Trip Planner</span>
+            </div>
+            <h2 className="text-4xl sm:text-6xl font-black mb-3 tracking-tighter whisk-text-ombre">
+              Where next, bestie?
+            </h2>
+            <p className="text-slate-500 font-medium text-lg">
+              Pick your destination, exact travel dates, and departure airport — Whisk builds your private route.
+            </p>
+            {savedSpotCount > 0 && (
+              <p className="text-xs font-bold text-emerald-700 mt-2">
+                {savedSpotCount} explored & saved spot{savedSpotCount === 1 ? '' : 's'} ready to personalize your itinerary
+              </p>
+            )}
           </div>
-          <div className="space-y-12">
-            <div className="grid md:grid-cols-2 gap-10">
-              <div className="space-y-4">
-                <label className="text-[12px] font-black uppercase tracking-[0.4em] text-slate-400 ml-6">Destinaton</label>
-                <div className="relative group">
-                  <MapPin className="absolute left-8 top-1/2 -translate-y-1/2 text-[var(--whisk-orange)] w-7 h-7" />
-                  <input type="text" placeholder="Bali, London, Mars..." className="w-full bg-slate-50 border-4 border-transparent rounded-[2.5rem] py-6 pl-20 pr-10 outline-none focus:ring-8 focus:ring-[var(--focus-ring)] focus:bg-white transition-all text-xl font-black text-[var(--whisk-navy)]" value={params.destination} onChange={e => setParams({...params, destination: e.target.value})} />
-                </div>
-              </div>
-              <div className="space-y-4">
-                <label className="text-[12px] font-black uppercase tracking-[0.4em] text-slate-400 ml-6">How many days?</label>
-                <div className="relative group">
-                  <Calendar className="absolute left-8 top-1/2 -translate-y-1/2 text-[var(--whisk-orange)] w-7 h-7" />
-                  <select className="w-full bg-slate-50 border-4 border-transparent rounded-[2.5rem] py-6 pl-20 pr-10 outline-none focus:ring-8 focus:ring-[var(--focus-ring)] focus:bg-white transition-all text-xl font-black text-[var(--whisk-navy)] appearance-none cursor-pointer" value={params.duration} onChange={e => setParams({...params, duration: e.target.value})}>
-                    {[2,3,4,5,7,10,14,21].map(d => <option key={d} value={`${d} days`}>{d} Days</option>)}
-                  </select>
-                </div>
+
+          <div className="space-y-8">
+            <div className="space-y-3">
+              <label className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 ml-4">Destination</label>
+              <div className="relative group">
+                <MapPin className="absolute left-6 top-1/2 -translate-y-1/2 text-[var(--whisk-orange)] w-6 h-6" />
+                <input
+                  type="text"
+                  placeholder="Tokyo, Amalfi Coast, Lisbon..."
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-3xl py-5 pl-16 pr-6 outline-none focus:border-[var(--whisk-orange)] focus:bg-white transition-all text-lg font-bold text-[var(--whisk-navy)]"
+                  value={params.destination}
+                  onChange={e => setParams({...params, destination: e.target.value})}
+                />
               </div>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-10">
-              <div className="space-y-4">
-                <label className="text-[12px] font-black uppercase tracking-[0.4em] text-slate-400 ml-6">Budget</label>
+            {/* Interactive Calendar Date Range Picker */}
+            <DateRangeCalendarPicker
+              startDate={params.startDate}
+              endDate={params.endDate}
+              minDate={todayIso}
+              maxDays={14}
+              defaultOpen
+              onChange={handleDateRangeChange}
+            />
+
+            {/* Departing From / Nearest Airport with Location Services */}
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-4">
+                <label className="text-xs font-black uppercase tracking-[0.25em] text-slate-400">
+                  Departing From (For Eligible Flights)
+                </label>
+                <button
+                  type="button"
+                  onClick={handleFindNearestAirport}
+                  disabled={locatingAirport}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--whisk-azure)] hover:underline cursor-pointer disabled:opacity-60"
+                >
+                  {locatingAirport ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <LocateFixed className="w-3.5 h-3.5" />
+                  )}
+                  {locatingAirport ? 'Finding nearest airport...' : 'Use My Location (Nearest Airport)'}
+                </button>
+              </div>
+              <div className="relative">
+                <Plane className="absolute left-6 top-1/2 -translate-y-1/2 text-[var(--whisk-azure)] w-6 h-6" />
+                <input
+                  type="text"
+                  placeholder="City or airport code (e.g., SFO, New York, London LHR)"
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-3xl py-5 pl-16 pr-6 outline-none focus:border-[var(--whisk-azure)] focus:bg-white transition-all text-base font-bold text-[var(--whisk-navy)]"
+                  value={params.departureAirport || params.departureLocation || ''}
+                  onChange={e =>
+                    setParams({
+                      ...params,
+                      departureLocation: e.target.value,
+                      departureAirport: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              {airportNote && (
+                <p className="text-xs font-semibold text-slate-500 px-4">{airportNote}</p>
+              )}
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-8">
+              <div className="space-y-3">
+                <label className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 ml-4">Budget</label>
                 <div className="relative group">
-                  <DollarSign className="absolute left-8 top-1/2 -translate-y-1/2 text-[var(--whisk-orange)] w-7 h-7" />
-                  <select className="w-full bg-slate-50 border-4 border-transparent rounded-[2.5rem] py-6 pl-20 pr-10 outline-none focus:ring-8 focus:ring-[var(--focus-ring)] focus:bg-white transition-all text-xl font-black text-[var(--whisk-navy)] appearance-none cursor-pointer" value={params.budget} onChange={e => setParams({...params, budget: e.target.value as any})}>
+                  <DollarSign className="absolute left-6 top-1/2 -translate-y-1/2 text-[var(--whisk-orange)] w-6 h-6" />
+                  <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-3xl py-5 pl-16 pr-6 outline-none focus:border-[var(--whisk-orange)] focus:bg-white transition-all text-lg font-bold text-[var(--whisk-navy)] appearance-none cursor-pointer" value={params.budget} onChange={e => setParams({...params, budget: e.target.value as any})}>
                     <option value="Budget">Shoestring</option>
                     <option value="Mid-range">Comfortable</option>
                     <option value="Luxury">All Out</option>
                   </select>
                 </div>
               </div>
-              <div className="space-y-4">
-                <label className="text-[12px] font-black uppercase tracking-[0.4em] text-slate-400 ml-6">Energy Level</label>
+              <div className="space-y-3">
+                <label className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 ml-4">Energy Level</label>
                 <div className="relative group">
-                  <Zap className="absolute left-8 top-1/2 -translate-y-1/2 text-[var(--whisk-orange)] w-7 h-7" />
-                  <select className="w-full bg-slate-50 border-4 border-transparent rounded-[2.5rem] py-6 pl-20 pr-10 outline-none focus:ring-8 focus:ring-[var(--focus-ring)] focus:bg-white transition-all text-xl font-black text-[var(--whisk-navy)] appearance-none cursor-pointer" value={params.pace} onChange={e => setParams({...params, pace: e.target.value as any})}>
+                  <Zap className="absolute left-6 top-1/2 -translate-y-1/2 text-[var(--whisk-orange)] w-6 h-6" />
+                  <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-3xl py-5 pl-16 pr-6 outline-none focus:border-[var(--whisk-orange)] focus:bg-white transition-all text-lg font-bold text-[var(--whisk-navy)] appearance-none cursor-pointer" value={params.pace} onChange={e => setParams({...params, pace: e.target.value as any})}>
                     <option value="Relaxed">Chill Vibes</option>
                     <option value="Moderate">A Bit of Everything</option>
                     <option value="Fast-paced">Let's Go Everywhere</option>
@@ -1884,31 +2300,67 @@ const TripPlannerForm = ({ onGenerate, loading }: any) => {
               </div>
             </div>
 
-            <div className="space-y-8">
-              <label className="text-[12px] font-black uppercase tracking-[0.4em] text-slate-400 ml-6">Vibes We Want</label>
-              <div className="flex flex-wrap gap-3">
+            <div className="space-y-4">
+              <label className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 ml-4">Vibes We Want</label>
+              <div className="flex flex-wrap gap-2.5">
                 {['Fine Dining', 'Art & Culture', 'Nature', 'Extreme Adventure', 'Shopping', 'Hidden Gems', 'Relaxing', 'Sports'].map(interest => (
-                  <button key={interest} onClick={() => toggleInterest(interest)} className={`px-6 py-3 rounded-[2rem] text-sm font-black uppercase tracking-widest transition-all border-4 ${params.interests.includes(interest) ? 'vibrant-gradient border-transparent text-white shadow-xl scale-110' : 'bg-slate-50 border-transparent text-slate-400 hover:bg-slate-100 hover:text-[var(--whisk-navy)]'}`}>{interest}</button>
+                  <button key={interest} type="button" onClick={() => toggleInterest(interest)} className={`px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${params.interests.includes(interest) ? 'vibrant-gradient text-white shadow-md' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-[var(--whisk-navy)]'}`}>{interest}</button>
                 ))}
               </div>
             </div>
 
-            <div className="space-y-8">
-              <div className="flex items-center gap-4 ml-6">
-                <Accessibility className="w-5 h-5 text-slate-400" />
-                <label className="text-[12px] font-black uppercase tracking-[0.4em] text-slate-400">Accessibility Needs</label>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 ml-4">
+                <Accessibility className="w-4 h-4 text-slate-400" />
+                <label className="text-xs font-black uppercase tracking-[0.25em] text-slate-400">Accessibility Needs</label>
               </div>
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-2.5">
                 {accessibilityOptions.map(option => (
-                  <button key={option} onClick={() => toggleAccessibility(option)} className={`px-6 py-3 rounded-[2rem] text-sm font-black uppercase tracking-widest transition-all border-4 ${params.accessibility.includes(option) ? 'cyan-gradient border-transparent text-white shadow-xl scale-110' : 'bg-slate-50 border-transparent text-slate-400 hover:bg-slate-100 hover:text-[var(--whisk-navy)]'}`}>{option}</button>
+                  <button key={option} type="button" onClick={() => toggleAccessibility(option)} className={`px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${params.accessibility.includes(option) ? 'cyan-gradient text-white shadow-md' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-[var(--whisk-navy)]'}`}>{option}</button>
                 ))}
               </div>
             </div>
 
-            <button onClick={() => onGenerate(params)} disabled={loading || !params.destination} className={`w-full py-8 rounded-[3rem] font-black uppercase tracking-[0.5em] text-lg flex items-center justify-center gap-6 transition-all ${loading || !params.destination ? 'bg-slate-100 text-slate-300' : 'vibrant-gradient text-white hover:scale-105 shadow-[var(--shadow-orange)]'}`}>
-              {loading ? <div className="flex gap-2"><div className="w-3 h-3 bg-white rounded-full animate-bounce"></div><div className="w-3 h-3 bg-white rounded-full animate-bounce delay-100"></div></div> : <Compass className="w-8 h-8" />}
-              {loading ? "Sorting it out, hang tight!" : 'Plan My Trip!'}
-            </button>
+            {/* Public Community Blog Post Toggle */}
+            <label className="flex items-start justify-between gap-4 bg-slate-50 border border-slate-200/80 rounded-3xl p-5 cursor-pointer select-none">
+              <div className="space-y-1">
+                <div className="text-sm font-black text-[var(--whisk-navy)]">
+                  Publish a Public Destination Field Guide to Homepage Feed
+                </div>
+                <p className="text-xs font-medium text-slate-500 leading-relaxed">
+                  When on, Whisk automatically adds an edited public guide with 1–3 standout places to eat or visit into the homepage post rotation. Your personal itinerary, budget, and schedule stay private.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={Boolean(params.publishPublicGuide)}
+                onChange={(e) => setParams({ ...params, publishPublicGuide: e.target.checked })}
+                className="w-5 h-5 mt-0.5 rounded border-slate-300 accent-[var(--whisk-orange)] shrink-0"
+              />
+            </label>
+
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={() => onGenerate(params)}
+                disabled={loading || !params.destination.trim() || !hasValidDateRange}
+                className={`w-full py-6 rounded-3xl font-black uppercase tracking-[0.35em] text-base flex items-center justify-center gap-4 transition-all cursor-pointer ${
+                  loading || !params.destination.trim() || !hasValidDateRange
+                    ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                    : 'vibrant-gradient text-white hover:opacity-95 shadow-[var(--shadow-orange)]'
+                }`}
+              >
+                {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Compass className="w-6 h-6" />}
+                {loading ? 'Building your itinerary...' : 'Plan My Trip'}
+              </button>
+              {!hasValidDateRange && (
+                <p className="text-center text-xs font-semibold text-slate-500">
+                  {!params.startDate
+                    ? 'Select both a start date and an end date on the calendar above to continue.'
+                    : 'Select your return date on the calendar above to complete your trip dates.'}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1920,6 +2372,7 @@ export default function App() {
   const {
     user,
     authReady,
+    isAdmin,
     membershipTier,
     username,
     needsLegalConsent,
@@ -1930,6 +2383,30 @@ export default function App() {
     clearAuthError,
   } = useAuth();
 
+  const [currentPath, setCurrentPath] = React.useState<string>(() =>
+    typeof window !== 'undefined' ? window.location.pathname : '/'
+  );
+
+  const navigateTo = React.useCallback((nextPath: string, replace = false) => {
+    if (typeof window !== 'undefined') {
+      if (replace) {
+        window.history.replaceState(null, '', nextPath);
+      } else {
+        window.history.pushState(null, '', nextPath);
+      }
+      setCurrentPath(window.location.pathname);
+    } else {
+      setCurrentPath(nextPath);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onPopState = () => setCurrentPath(window.location.pathname);
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
   const [loading, setLoading] = React.useState(false);
   const [loadingStatus, setLoadingStatus] = React.useState('');
   const [itinerary, setItinerary] = React.useState<TripItinerary | null>(null);
@@ -1938,13 +2415,22 @@ export default function App() {
   const [recentTrips, setRecentTrips] = React.useState<TripItinerary[]>([]);
   const [publicGuides, setPublicGuides] = React.useState<BlogPost[]>([]);
   const [savedPlaces, setSavedPlaces] = React.useState<SavedPlace[]>([]);
+  const [exploredSpots, setExploredSpots] = React.useState<DiscoveredSpot[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = window.localStorage.getItem('whisk_explored_spots_v1');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.slice(0, 24) : [];
+    } catch {
+      return [];
+    }
+  });
   const [viewingData, setViewingData] = React.useState<{post: BlogPost, itinerary?: TripItinerary | null} | null>(null);
   const [isMembershipModalOpen, setIsMembershipModalOpen] = React.useState(false);
   const [passportPromptReason, setPassportPromptReason] = React.useState<string | null>(null);
   const [isProfileGateOpen, setIsProfileGateOpen] = React.useState(false);
   const [pendingPlannerAfterAuth, setPendingPlannerAfterAuth] = React.useState(false);
   const [singleTripUnlockedCredit, setSingleTripUnlockedCredit] = React.useState(false);
-  const [generatingBlogPostId, setGeneratingBlogPostId] = React.useState<string | null>(null);
   const [bannerError, setBannerError] = React.useState<string | null>(null);
   const [mapsQuotaExceeded, setMapsQuotaExceeded] = React.useState(false);
   const [activeLegalDocId, setActiveLegalDocId] = React.useState<LegalDocId | null>(() => {
@@ -1962,8 +2448,6 @@ export default function App() {
 
   const [shuffledArticles, setShuffledArticles] = React.useState<BlogPost[]>([]);
   const [showAllArticles, setShowAllArticles] = React.useState(false);
-  const [activePromoTab, setActivePromoTab] = React.useState(0);
-  const [promoImageIndex, setPromoImageIndex] = React.useState(() => Math.floor(Math.random() * PROMO_TRAVEL_PHOTOS.length));
 
   const openLegalDoc = React.useCallback((docId: LegalDocId) => {
     setActiveLegalDocId(docId);
@@ -2015,13 +2499,6 @@ export default function App() {
     const onQuotaExceeded = () => setMapsQuotaExceeded(true);
     window.addEventListener('gmp-quota-exceeded', onQuotaExceeded);
     return () => window.removeEventListener('gmp-quota-exceeded', onQuotaExceeded);
-  }, []);
-
-  React.useEffect(() => {
-    const timer = setInterval(() => {
-      setPromoImageIndex((prev) => (prev + 1) % PROMO_TRAVEL_PHOTOS.length);
-    }, 6000);
-    return () => clearInterval(timer);
   }, []);
 
   // Subscribe to public SEO/GEO organic community field guides regardless of auth state
@@ -2082,14 +2559,49 @@ export default function App() {
     }
   };
 
-  const baseArticles = React.useMemo(() => {
-    const tripGuides = recentTrips
-      .map((t) => t.blogPost)
-      .filter((p): p is BlogPost => p !== undefined && p !== null);
+  const handleSpotsDiscovered = React.useCallback(
+    async (spots: DiscoveredSpot[]) => {
+      if (!spots.length) return;
+      setExploredSpots((prev) => {
+        const seen = new Set(prev.map((s) => s.name.toLowerCase()));
+        const additions = spots.filter((s) => !seen.has(s.name.toLowerCase()));
+        const next = [...additions, ...prev].slice(0, 24);
+        try {
+          window.localStorage.setItem('whisk_explored_spots_v1', JSON.stringify(next));
+        } catch {
+          // Ignore storage quota errors
+        }
+        return next;
+      });
 
+      // Also persist newly discovered spots to Firestore for signed-in users so future itineraries use them cross-device
+      if (user && !needsLegalConsent) {
+        const newForFirestore = spots
+          .filter((s) => !savedPlaceNames.has(s.name.toLowerCase()))
+          .slice(0, 3);
+        for (const spot of newForFirestore) {
+          try {
+            await saveFavoritePlace(user.uid, {
+              name: spot.name,
+              type: 'place',
+              destination: spot.destination || 'Explore',
+              description: spot.description || `Explored spot in ${spot.destination}`,
+              mapsUri: spot.mapsUri,
+            });
+          } catch {
+            // Non-fatal; already cached locally
+          }
+        }
+      }
+    },
+    [user, needsLegalConsent, savedPlaceNames]
+  );
+
+  // Public Community Field Guides feed ONLY uses publicGuides + editorial defaults (keeping personal itineraries private)
+  const baseArticles = React.useMemo(() => {
     const seenKeys = new Set<string>();
     const combined: BlogPost[] = [];
-    for (const item of [...tripGuides, ...publicGuides, ...INITIAL_ARTICLES]) {
+    for (const item of [...publicGuides, ...INITIAL_ARTICLES]) {
       const dedupeKey = item.slug || item.id;
       if (!seenKeys.has(dedupeKey) && !seenKeys.has(item.id)) {
         seenKeys.add(dedupeKey);
@@ -2098,7 +2610,7 @@ export default function App() {
       }
     }
     return combined;
-  }, [recentTrips, publicGuides]);
+  }, [publicGuides]);
 
   // Deep-link ?guide=<slug> for direct SEO / shared field guide links
   React.useEffect(() => {
@@ -2110,12 +2622,9 @@ export default function App() {
       (g) => g.slug === guideParam || g.id === guideParam
     );
     if (matched) {
-      const associated = matched.itineraryId
-        ? recentTrips.find((t) => t.id === matched.itineraryId) || null
-        : null;
-      setViewingData({ post: matched, itinerary: associated });
+      setViewingData({ post: matched, itinerary: null });
     }
-  }, [baseArticles, recentTrips, viewingData]);
+  }, [baseArticles, viewingData]);
 
   // Dynamic SEO & GEO <head> metadata + JSON-LD structured data updater
   React.useEffect(() => {
@@ -2276,12 +2785,41 @@ export default function App() {
 
     setLoading(true);
     setBannerError(null);
-    setLoadingStatus('Mapping your perfect trip with Google Search & Maps...');
+    setLoadingStatus('Planning your route, verified stops, and partner bookings...');
     setShowForm(false);
     setItinerary(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     try {
-      const itineraryResult = await generateItinerary(params);
+      // Combine saved Firestore places + locally explored homepage spots relevant to the trip
+      const destLower = params.destination.toLowerCase();
+      const allRemembered: DiscoveredSpot[] = [
+        ...savedPlaces.map((p) => ({
+          name: p.name,
+          destination: p.destination,
+          description: p.description,
+          mapsUri: p.mapsUri,
+        })),
+        ...exploredSpots,
+      ];
+      const dedupedPreferred: DiscoveredSpot[] = [];
+      const seenPreferred = new Set<string>();
+      for (const spot of allRemembered) {
+        const key = spot.name.toLowerCase();
+        if (seenPreferred.has(key)) continue;
+        const spotDest = (spot.destination || '').toLowerCase();
+        if (
+          spotDest &&
+          (destLower.includes(spotDest) || spotDest.includes(destLower.split(',')[0].trim()))
+        ) {
+          seenPreferred.add(key);
+          dedupedPreferred.push(spot);
+        }
+      }
+
+      const itineraryResult = await generateItinerary({
+        ...params,
+        preferredSpots: dedupedPreferred.slice(0, 6),
+      });
       const shouldUnlockNow = hasSubscription || singleTripUnlockedCredit;
       if (singleTripUnlockedCredit) {
         setSingleTripUnlockedCredit(false);
@@ -2297,35 +2835,23 @@ export default function App() {
       await persistTrip(finalItinerary);
       setLoading(false);
 
-      setGeneratingBlogPostId(itineraryResult.id);
-      try {
-        const blogPostResult = await generateBlogPost(itineraryResult);
-
-        const newBlogPost: BlogPost = {
-          ...blogPostResult,
-          id: `guide_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          imageUrl: getUniqueTravelImage(params.destination, blogPostResult.title || itineraryResult.id),
-          createdAt: new Date().toISOString(),
-          isPublished: true,
-        };
-
-        setItinerary(prev => {
-          if (prev && prev.id === itineraryResult.id) {
-            return { ...prev, blogPost: newBlogPost };
+      // If the public toggle is enabled, publish an edited public-safe Field Guide directly into the homepage post rotation (never shown on the private itinerary)
+      if (params.publishPublicGuide !== false) {
+        (async () => {
+          try {
+            const blogPostResult = await generateBlogPost(itineraryResult);
+            const newBlogPost: BlogPost = {
+              ...blogPostResult,
+              id: `guide_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              imageUrl: getUniqueTravelImage(params.destination, blogPostResult.title || itineraryResult.id),
+              createdAt: new Date().toISOString(),
+              isPublished: true,
+            };
+            await publishGuideToFirestore(user.uid, newBlogPost);
+          } catch (bgErr) {
+            console.warn('Public destination guide auto-publish skipped:', bgErr);
           }
-          return prev;
-        });
-
-        await Promise.all([
-          updateItineraryBlogPostInFirestore(itineraryResult.id, newBlogPost),
-          publishGuideToFirestore(user.uid, newBlogPost).catch((err) => {
-            console.warn('Public organic guide publish skipped:', err);
-          }),
-        ]);
-      } catch (bgErr) {
-        console.error("Failed to generate blog post in background:", bgErr);
-      } finally {
-        setGeneratingBlogPostId(null);
+        })();
       }
     } catch (err: any) {
       console.error('Error generating itinerary:', err);
@@ -2336,11 +2862,11 @@ export default function App() {
   };
 
   const handleViewPost = (post: BlogPost) => {
-    const associatedItinerary = recentTrips.find(trip => trip.id === post.itineraryId) || null;
-    setViewingData({ post, itinerary: associatedItinerary });
+    setViewingData({ post, itinerary: null });
     if (typeof window !== 'undefined') {
       const guideKey = post.slug || post.id;
-      window.history.replaceState(null, '', `?guide=${encodeURIComponent(guideKey)}`);
+      window.history.replaceState(null, '', `/?guide=${encodeURIComponent(guideKey)}`);
+      setCurrentPath('/');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -2446,18 +2972,62 @@ export default function App() {
   );
 
   const activeError = bannerError || (!isProfileGateOpen ? authError : null);
+  const isAdminRoute = currentPath === '/admin' || currentPath.startsWith('/admin/');
+
+  const handleOpenAdmin = React.useCallback(() => {
+    navigateTo(isAdmin ? '/admin' : '/admin/login');
+  }, [isAdmin, navigateTo]);
+
+  const handleUnauthorizedAdminRedirect = React.useCallback(
+    (message: string) => {
+      navigateTo('/', true);
+      setBannerError(message);
+    },
+    [navigateTo]
+  );
+
+  const handleNormalizeToAdmin = React.useCallback(() => {
+    navigateTo('/admin', true);
+  }, [navigateTo]);
+
+  if (isAdminRoute) {
+    return (
+      <>
+        <AdminRouteGuard
+          currentPath={currentPath}
+          onUnauthorizedRedirect={handleUnauthorizedAdminRedirect}
+          onNavigateHome={() => navigateTo('/')}
+          onNormalizeToAdmin={handleNormalizeToAdmin}
+        >
+          <AdminDashboard
+            onNavigateHome={() => navigateTo('/')}
+            onOpenPublicGuide={(post) => handleViewPost(post)}
+          />
+        </AdminRouteGuard>
+        <LegalConsentModal
+          isOpen={Boolean(user && needsLegalConsent)}
+          onOpenLegalDoc={openLegalDoc}
+        />
+        <LegalModal
+          activeDocId={activeLegalDocId}
+          onSelectDoc={openLegalDoc}
+          onClose={closeLegalDoc}
+        />
+      </>
+    );
+  }
 
   if (viewingData) {
     return (
-       <div className="min-h-screen selection:bg-[var(--whisk-terracotta)] selection:text-white relative bg-[#FAFAFA] transition-all duration-700">
+       <div className="min-h-screen selection:bg-[var(--whisk-terracotta)] selection:text-white relative whisk-ombre-bg transition-all duration-700">
          {mapsQuotaExceeded && <MapsQuotaBanner />}
          <div className="relative z-10 flex flex-col min-h-screen justify-between">
            <div>
-             <Navbar user={user} username={username} membershipTier={membershipTier} signingIn={signingIn} onHome={handleReturnHome} onMyTrips={() => { if(user) setActiveTab('my-trips'); setItinerary(null); handleCloseGuide(); }} onSignIn={openAuthModal} onLogOut={handleLogOut} activeTab={'home'} onUpgrade={handleUnlock} />
+             <Navbar user={user} username={username} membershipTier={membershipTier} isAdmin={isAdmin} signingIn={signingIn} onHome={handleReturnHome} onMyTrips={() => { if(user) setActiveTab('my-trips'); setItinerary(null); handleCloseGuide(); }} onOpenAdmin={handleOpenAdmin} onSignIn={openAuthModal} onLogOut={handleLogOut} activeTab={'home'} onUpgrade={handleUnlock} />
              <BlogPostDisplay
                post={viewingData.post}
                hasActiveSubscription={hasActiveSubscription}
-               itinerary={viewingData.itinerary}
+               itinerary={null}
                onBack={handleCloseGuide}
                savedPlaceNames={savedPlaceNames}
                onSavePlace={handleSaveOrTogglePlace}
@@ -2468,7 +3038,7 @@ export default function App() {
                }}
              />
            </div>
-           <LegalFooter onOpenLegalDoc={openLegalDoc} compact />
+           <LegalFooter onOpenLegalDoc={openLegalDoc} onOpenAdmin={handleOpenAdmin} compact />
          </div>
          <AuthModal
            isOpen={isProfileGateOpen && !user}
@@ -2499,12 +3069,15 @@ export default function App() {
     );
   }
 
-  const isLandingView = !loading && !itinerary && !showForm && activeTab === 'home';
+  const totalRememberedSpots = new Set([
+    ...savedPlaces.map((p) => p.name.toLowerCase()),
+    ...exploredSpots.map((s) => s.name.toLowerCase()),
+  ]).size;
 
   return (
-    <div className={`min-h-screen selection:bg-[var(--whisk-terracotta)] selection:text-white relative transition-all duration-700 ${isLandingView ? 'whisk-ombre-bg' : 'bg-[#FAFAFA]'}`}>
+    <div className="min-h-screen selection:bg-[var(--whisk-terracotta)] selection:text-white relative transition-all duration-700 whisk-ombre-bg">
       {mapsQuotaExceeded && <MapsQuotaBanner />}
-      <Navbar user={user} username={username} membershipTier={membershipTier} signingIn={signingIn} onHome={handleReturnHome} onMyTrips={() => { if(user) setActiveTab('my-trips'); setItinerary(null); setShowForm(false); }} onSignIn={openAuthModal} onLogOut={handleLogOut} activeTab={activeTab} onUpgrade={handleUnlock} />
+      <Navbar user={user} username={username} membershipTier={membershipTier} isAdmin={isAdmin} signingIn={signingIn} onHome={handleReturnHome} onMyTrips={() => { if(user) setActiveTab('my-trips'); setItinerary(null); setShowForm(false); }} onOpenAdmin={handleOpenAdmin} onSignIn={openAuthModal} onLogOut={handleLogOut} activeTab={activeTab} onUpgrade={handleUnlock} />
 
       {activeError && (
         <div className="max-w-4xl mx-auto px-6 mt-6 relative z-30">
@@ -2529,27 +3102,29 @@ export default function App() {
 
           {/* Centered Permanent Hero Card */}
           <div className="w-full max-w-[460px] text-center relative z-10 flex flex-col items-center bg-white/95 backdrop-blur-md p-8 sm:p-10 rounded-3xl shadow-[0_28px_80px_rgba(15,23,42,0.34)] border-2 border-white">
-            {/* Vibrant Travel Icon Bar (no city list) */}
-            <div className="flex items-center justify-center gap-3 mb-5">
+            <WhiskLogo size={72} className="mb-4 drop-shadow-md" />
+            {/* Vibrant Travel Icon Bar */}
+            <div className="flex items-center justify-center gap-2.5 mb-5">
               {HERO_CARD_ICONS.map(({ Icon, color, bg }, idx) => (
                 <div
                   key={idx}
-                  className={`w-10 h-10 rounded-2xl ${bg} flex items-center justify-center shadow-xs transition-transform duration-200 hover:scale-110`}
+                  className={`w-9 h-9 rounded-2xl ${bg} flex items-center justify-center shadow-xs transition-transform duration-200 hover:scale-110`}
                 >
-                  <Icon className="w-5 h-5" style={{ color }} />
+                  <Icon className="w-4 h-4" style={{ color }} />
                 </div>
               ))}
             </div>
 
-            <h1 className="text-4xl sm:text-5xl font-black text-[var(--whisk-navy)] mb-4 tracking-tight leading-[1.08] text-balance">
+            <h1 className="text-4xl sm:text-5xl font-black text-black mb-4 tracking-tight leading-[1.08] text-balance">
               Where will you{' '}
               <span className="whisk-text-ombre">
-                whisk to?
-              </span>
+                whisk
+              </span>{' '}
+              <span className="text-black">to?</span>
             </h1>
 
             <p className="text-sm sm:text-base text-slate-600 max-w-sm mx-auto leading-relaxed font-medium mb-7">
-              Curated local routes backed by live search and Google Maps. Create your profile to preview your first trip free.
+              Curated local routes with verified stops, day-level partner bookings, and interactive maps. Create your profile to preview your first trip free.
             </p>
 
             <button
@@ -2564,7 +3139,11 @@ export default function App() {
       )}
 
       {!loading && showForm && !itinerary && (
-        <TripPlannerForm onGenerate={handleGenerate} loading={loading} />
+        <TripPlannerForm
+          onGenerate={handleGenerate}
+          loading={loading}
+          savedSpotCount={totalRememberedSpots}
+        />
       )}
 
       {/* Discover Section */}
@@ -2582,87 +3161,18 @@ export default function App() {
             <PlacesExplorer
               savedPlaceNames={savedPlaceNames}
               onSavePlace={handleSaveOrTogglePlace}
+              onSpotsDiscovered={handleSpotsDiscovered}
             />
           </section>
-          <section className="py-24 relative overflow-hidden transition-all duration-700">
-            <div className="max-w-7xl mx-auto px-6 relative z-10">
-              <div className="grid md:grid-cols-2 gap-14 lg:gap-20 items-start">
-                <div className="relative">
-                  <img
-                    key={promoImageIndex}
-                    src={PROMO_TRAVEL_PHOTOS[promoImageIndex]}
-                    referrerPolicy="no-referrer"
-                    className="rounded-[4rem] shadow-2xl border-8 border-white object-cover aspect-[4/3] w-full animate-in fade-in duration-1000"
-                    alt="Travel Scene"
-                  />
-                </div>
-                <div className="space-y-8 bg-white/95 backdrop-blur-md rounded-[3rem] p-8 md:p-10 shadow-2xl border-2 border-white">
-                  <h2 className="text-5xl md:text-6xl font-black tracking-tighter text-[var(--whisk-navy)] leading-tight">Better Trips, Fast.</h2>
-                  <div className="w-full bg-slate-50/90 p-6 rounded-[2rem] border border-slate-100">
-                    <div className="flex border-b border-slate-200/70 pb-3 mb-6 gap-2 sm:gap-4">
-                      <button
-                        onClick={() => setActivePromoTab(0)}
-                        className={`flex-1 flex items-center justify-center gap-3 py-3 px-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
-                          activePromoTab === 0
-                            ? 'vibrant-gradient text-white shadow-md'
-                            : 'bg-white text-slate-600 hover:text-[var(--whisk-navy)]'
-                        }`}
-                        id="btn-promo-tab-vetted"
-                      >
-                        <Heart className={`w-3.5 h-3.5 ${activePromoTab === 0 ? 'fill-white text-white' : 'text-slate-400'}`} />
-                        Vetted Advice
-                      </button>
-                      
-                      <button
-                        onClick={() => setActivePromoTab(1)}
-                        className={`flex-1 flex items-center justify-center gap-3 py-3 px-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
-                          activePromoTab === 1
-                            ? 'vibrant-gradient text-white shadow-md'
-                            : 'bg-white text-slate-600 hover:text-[var(--whisk-navy)]'
-                        }`}
-                        id="btn-promo-tab-seconds"
-                      >
-                        <Zap className={`w-3.5 h-3.5 ${activePromoTab === 1 ? 'fill-white text-white' : 'text-slate-400'}`} />
-                        Ready in Seconds
-                      </button>
-                    </div>
-
-                    <div className="px-2 py-1 duration-300 animate-in fade-in zoom-in-95">
-                      {activePromoTab === 0 ? (
-                        <div>
-                          <h4 className="text-lg font-black uppercase tracking-wider text-[var(--whisk-navy)] mb-2 flex items-center gap-2">
-                            Only the Best Hand-Picked Advice
-                          </h4>
-                          <p className="text-slate-600 font-medium leading-relaxed text-sm">
-                            We don't do sponsored lists. Every recommendation is cross-checked with real-time Search and Google Maps data. Only the places I'd tell my best friend about.
-                          </p>
-                        </div>
-                      ) : (
-                        <div>
-                          <h4 className="text-lg font-black uppercase tracking-wider text-[var(--whisk-navy)] mb-2 flex items-center gap-2">
-                            A Full Personal Route Ready in Coffee Time
-                          </h4>
-                          <p className="text-slate-600 font-medium leading-relaxed text-sm">
-                            Stop spending weeks parsing countless forums. Our smart planner creates a complete custom local route in the time it takes to grab a cup of hot espresso.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <TrustTabs />
-                </div>
-              </div>
-            </div>
-          </section>
+          <TravelShowcaseSection />
         </>
       )}
       
       {!loading && !itinerary && activeTab === 'my-trips' && (
-         <div className="relative overflow-hidden bg-gradient-to-tr from-orange-50/60 via-amber-50/30 to-rose-50/60 min-h-[75vh] py-16 transition-all duration-700">
-           <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1.5px,transparent_1.5px)] [background-size:20px_20px] opacity-40 pointer-events-none"></div>
+         <div className="relative overflow-hidden min-h-[75vh] py-16 transition-all duration-700">
            <div className="max-w-7xl mx-auto px-6 sm:px-10 relative z-10 pt-10 space-y-20">
              <div>
-               <h2 className="text-5xl md:text-7xl font-black mb-12 tracking-tighter text-center text-[var(--whisk-navy)]">My Saved Trips</h2>
+               <h2 className="text-5xl md:text-7xl font-black mb-12 tracking-tighter text-center whisk-text-ombre">My Saved Trips</h2>
                {recentTrips.length > 0 ? (
                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-10">
                     {recentTrips.map(trip => (
@@ -2674,8 +3184,11 @@ export default function App() {
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
-                        <div className="inline-block bg-orange-50 text-[var(--whisk-orange)] px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest mb-4">
+                        <div className="text-xs font-bold text-[var(--whisk-orange)] uppercase tracking-wider mb-3">
                           {trip.duration}
+                          {formatTripDateRange(trip.startDate, trip.endDate)
+                            ? ` · ${formatTripDateRange(trip.startDate, trip.endDate)}`
+                            : ''}
                         </div>
                         <h3 className="text-2xl font-black text-[var(--whisk-navy)] mb-4 tracking-tighter pr-8">{trip.title}</h3>
                         <div className="flex items-center gap-2 text-slate-400 font-black uppercase text-[10px] tracking-widest"><MapPin size={14}/> {trip.destination}</div>
@@ -2691,7 +3204,7 @@ export default function App() {
              </div>
 
              <div>
-               <h3 className="text-4xl md:text-5xl font-black mb-10 tracking-tighter text-center text-[var(--whisk-navy)]">Saved Favorite Places</h3>
+               <h3 className="text-4xl md:text-5xl font-black mb-10 tracking-tighter text-center whisk-text-ombre">Saved & Explored Places</h3>
                {savedPlaces.length > 0 ? (
                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                    {savedPlaces.map(place => (
@@ -2728,7 +3241,7 @@ export default function App() {
                  </div>
                ) : (
                  <div className="text-center py-12 bg-white/80 rounded-[3rem] border-2 border-white">
-                   <p className="text-slate-400 font-bold">Bookmark any hotel, restaurant, or Google Maps spot to keep it handy here!</p>
+                   <p className="text-slate-400 font-bold">Explore spots on the homepage or bookmark any hotel, restaurant, or stop to remember it for future itineraries!</p>
                  </div>
                )}
              </div>
@@ -2737,8 +3250,7 @@ export default function App() {
       )}
       
       {itinerary && !loading && (
-        <div className="relative overflow-hidden bg-gradient-to-tr from-orange-50/60 via-amber-50/30 to-rose-50/60 min-h-screen transition-all duration-700">
-          <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1.5px,transparent_1.5px)] [background-size:20px_20px] opacity-40 pointer-events-none"></div>
+        <div className="relative overflow-hidden min-h-screen transition-all duration-700">
           <div className="relative z-10">
             <ItineraryDisplay 
               itinerary={itinerary}
@@ -2746,14 +3258,11 @@ export default function App() {
               onRateActivity={() => {}} 
               onRateOverall={() => {}} 
               onUnlock={handleUnlock}
-              handleViewPost={handleViewPost}
-              generatingBlogPostId={generatingBlogPostId}
               savedPlaceNames={savedPlaceNames}
               onSavePlace={handleSaveOrTogglePlace}
               onCoordinatesHydrated={handleCoordinatesHydrated}
-              onSignInRequest={openAuthModal}
             />
-            <div className="max-w-7xl mx-auto px-6 pb-40 flex flex-col items-center gap-12">
+            <div className="max-w-7xl mx-auto px-6 pb-32 flex flex-col items-center gap-12">
               <button onClick={handleStartPlanning} className="bg-white border border-slate-200 px-12 py-6 rounded-3xl font-bold uppercase tracking-widest text-xs hover:border-[var(--whisk-terracotta)] transition-all flex items-center gap-3 shadow-lg group text-[var(--whisk-navy)] cursor-pointer">
                 <ChevronRight className="w-5 h-5 rotate-180 group-hover:-translate-x-1 transition-transform" /> Plan Another Trip
               </button>
@@ -2791,7 +3300,7 @@ export default function App() {
         onOpenLegalDoc={openLegalDoc}
         promptReason={passportPromptReason}
       />
-      <LegalFooter onOpenLegalDoc={openLegalDoc} />
+      <LegalFooter onOpenLegalDoc={openLegalDoc} onOpenAdmin={handleOpenAdmin} />
     </div>
   );
 }
