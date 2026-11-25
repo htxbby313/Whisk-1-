@@ -101,6 +101,8 @@ import {
   LANDMARK_POLAROIDS,
   LOCAL_TRAVEL_IMAGE_POOL,
   PolaroidLandmark,
+  getVerifiedDestinationImage,
+  resolvePostImage,
 } from './src/data/destinationMedia';
 
 const MapsQuotaBanner = () => (
@@ -653,7 +655,7 @@ const Navbar = ({ user, username, membershipTier, isAdmin, signingIn, onHome, on
       <div className="flex justify-between items-center h-20 gap-8">
         <button onClick={onHome} className="flex items-center gap-3 hover:opacity-90 transition-opacity cursor-pointer whitespace-nowrap shrink-0">
           <WhiskLogo size={40} className="drop-shadow-sm" />
-          <span className="text-2xl font-black tracking-tight whisk-text-ombre">Whisk</span>
+          <span className="text-2xl font-black tracking-tight text-[var(--whisk-navy)]">Whisk</span>
         </button>
 
         <div className="hidden md:flex items-center gap-8">
@@ -748,6 +750,63 @@ const Navbar = ({ user, username, membershipTier, isAdmin, signingIn, onHome, on
   </nav>
 );
 
+const BlogFeedCard: React.FC<{ post: BlogPost; onView: (post: BlogPost) => void }> = ({ post, onView }) => {
+  const [imgSrc, setImgSrc] = React.useState(() => resolvePostImage(post));
+
+  React.useEffect(() => {
+    setImgSrc(resolvePostImage(post));
+  }, [post.imageUrl, post.destination]);
+
+  return (
+    <div
+      className="bg-white rounded-[3rem] overflow-hidden shadow-2xl transition-all group cursor-pointer border-2 border-white animate-in fade-in duration-500 hover:-translate-y-1 hover:shadow-3xl"
+      onClick={() => onView(post)}
+    >
+      <div className="relative h-72 overflow-hidden bg-slate-900">
+        <img
+          src={imgSrc}
+          referrerPolicy="no-referrer"
+          onError={() => {
+            setImgSrc(getVerifiedDestinationImage(post.destination, post.id));
+          }}
+          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+          alt={post.title}
+        />
+        {/* High-contrast gradient overlay ensuring solid white text readability */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 to-transparent"></div>
+        <div className="absolute bottom-6 left-8 right-8 text-white">
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest mb-1.5 text-white/90 drop-shadow-sm">
+            <MapPin className="w-3.5 h-3.5 text-[var(--whisk-orange)]" />
+            <span>{post.destination}</span>
+          </div>
+          {/* Solid white title on gradient overlay */}
+          <h3 className="text-2xl font-black tracking-tight leading-tight text-white drop-shadow-md">
+            {post.title}
+          </h3>
+        </div>
+      </div>
+      <div className="p-8">
+        <p className="text-slate-600 font-medium text-sm line-clamp-2 mb-6 leading-relaxed">
+          {post.metaDescription}
+        </p>
+        <div className="flex items-center justify-between pt-6 border-t border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl vibrant-gradient flex items-center justify-center text-white text-[10px] font-black shadow-md">
+              W
+            </div>
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              Whisk Team
+            </span>
+          </div>
+          <span className="text-xs font-semibold text-slate-400 uppercase">
+            {new Date(post.createdAt).toLocaleDateString()}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const BlogFeed = ({ 
   posts, 
   onView, 
@@ -800,26 +859,7 @@ const BlogFeed = ({
       </div>
       <div className="grid md:grid-cols-3 gap-10">
         {posts.map((post: BlogPost) => (
-          <div key={post.id} className="bg-white rounded-[3rem] overflow-hidden shadow-2xl transition-all group cursor-pointer border-2 border-white animate-in fade-in duration-500" onClick={() => onView(post)}>
-            <div className="relative h-72 overflow-hidden">
-              <img src={post.imageUrl} referrerPolicy="no-referrer" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt={post.title} />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent"></div>
-              <div className="absolute bottom-6 left-8 right-8 text-white">
-                <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest mb-1.5 opacity-95"><MapPin className="w-3.5 h-3.5" />{post.destination}</div>
-                <h3 className="text-2xl font-black tracking-tight leading-tight">{post.title}</h3>
-              </div>
-            </div>
-            <div className="p-8">
-              <p className="text-slate-600 font-medium text-sm line-clamp-2 mb-6 leading-relaxed">{post.metaDescription}</p>
-              <div className="flex items-center justify-between pt-6 border-t border-slate-100">
-                 <div className="flex items-center gap-3">
-                     <div className="w-8 h-8 rounded-xl vibrant-gradient flex items-center justify-center text-white text-[10px] font-black shadow-md">W</div>
-                     <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Whisk Team</span>
-                 </div>
-                 <span className="text-xs font-semibold text-slate-400 uppercase">{new Date(post.createdAt).toLocaleDateString()}</span>
-              </div>
-            </div>
-          </div>
+          <BlogFeedCard key={post.id} post={post} onView={onView} />
         ))}
       </div>
     </div>
@@ -1122,6 +1162,12 @@ const BlogPostDisplay = ({
   onPlanDestination: (destination: string) => void;
 }) => {
   const [guideCopied, setGuideCopied] = React.useState(false);
+  const [detailImg, setDetailImg] = React.useState(() => resolvePostImage(post));
+
+  React.useEffect(() => {
+    setDetailImg(resolvePostImage(post));
+  }, [post.imageUrl, post.destination]);
+
   const contentHtml = React.useMemo(
     () =>
       post.content
@@ -1164,7 +1210,18 @@ const BlogPostDisplay = ({
 
       <div className="grid lg:grid-cols-3 gap-12">
         <div className="lg:col-span-2 bg-white rounded-[3rem] shadow-2xl border-4 border-white overflow-hidden">
-          <img src={post.imageUrl} referrerPolicy="no-referrer" className="w-full h-[380px] object-cover" alt={post.title} />
+          <div className="relative w-full h-[380px] bg-slate-900 overflow-hidden">
+            <img
+              src={detailImg}
+              referrerPolicy="no-referrer"
+              onError={() => {
+                setDetailImg(getVerifiedDestinationImage(post.destination, post.id));
+              }}
+              className="w-full h-full object-cover"
+              alt={post.title}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none"></div>
+          </div>
           <div className="p-8 sm:p-14">
             <div className="mb-6">
               <div className="flex flex-wrap items-center gap-2 text-[var(--whisk-terracotta)] font-bold text-xs uppercase tracking-wider mb-3">
@@ -1181,7 +1238,7 @@ const BlogPostDisplay = ({
                   </>
                 )}
               </div>
-              <h1 className="text-4xl md:text-5xl font-black whisk-text-ombre tracking-tight leading-tight">
+              <h1 className="text-4xl md:text-5xl font-black text-[var(--whisk-navy)] tracking-tight leading-tight">
                 {post.title}
               </h1>
             </div>
@@ -1682,7 +1739,7 @@ const ItinerarySkeleton = ({ statusText }: { statusText: string }) => {
               <WhiskLogo size={38} className="drop-shadow-xs" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-lg sm:text-xl font-black tracking-tight whisk-text-ombre truncate">
+              <h3 className="text-lg sm:text-xl font-black tracking-tight text-[var(--whisk-navy)] truncate">
                 Building Your Itinerary
               </h3>
               <p className="text-xs font-semibold text-slate-500 truncate">
@@ -1937,7 +1994,7 @@ const ItineraryDisplay = ({
               {itinerary.antiTouristTraps && <span className="text-amber-700 font-extrabold">· Anti-Tourist-Trap Active</span>}
             </div>
           )}
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-black whisk-text-ombre mb-6 tracking-tighter leading-tight text-balance">
+          <h1 className="text-4xl sm:text-6xl md:text-7xl font-black text-[var(--whisk-navy)] mb-6 tracking-tighter leading-tight text-balance">
             {itinerary.title}
           </h1>
           <p className="text-lg sm:text-xl text-slate-600 font-medium max-w-3xl mx-auto leading-relaxed italic">
@@ -2629,7 +2686,7 @@ const TripPlannerForm = ({
               <WhiskLogo size={26} />
               <span>Trip Planner</span>
             </div>
-            <h2 className="text-4xl sm:text-6xl font-black mb-3 tracking-tighter whisk-text-ombre">
+            <h2 className="text-4xl sm:text-6xl font-black mb-3 tracking-tighter text-[var(--whisk-navy)]">
               Where next, bestie?
             </h2>
             <p className="text-slate-500 font-medium text-lg">
@@ -3634,11 +3691,7 @@ export default function App() {
             </div>
 
             <h1 className="text-4xl sm:text-5xl font-black text-black mb-4 tracking-tight leading-[1.08] text-balance">
-              Where will you{' '}
-              <span className="whisk-text-ombre">
-                whisk
-              </span>{' '}
-              <span className="text-black">to?</span>
+              Where will you whisk to?
             </h1>
 
             <p className="text-sm sm:text-base text-slate-600 max-w-sm mx-auto leading-relaxed font-medium mb-7">
@@ -3691,7 +3744,7 @@ export default function App() {
          <div className="relative overflow-hidden min-h-[75vh] py-16 transition-all duration-700">
            <div className="max-w-7xl mx-auto px-6 sm:px-10 relative z-10 pt-10 space-y-20">
              <div>
-               <h2 className="text-5xl md:text-7xl font-black mb-12 tracking-tighter text-center whisk-text-ombre">My Saved Trips</h2>
+               <h2 className="text-5xl md:text-7xl font-black mb-12 tracking-tighter text-center text-[var(--whisk-navy)]">My Saved Trips</h2>
                {recentTrips.length > 0 ? (
                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-10">
                     {recentTrips.map(trip => (
@@ -3723,7 +3776,7 @@ export default function App() {
              </div>
 
              <div>
-               <h3 className="text-4xl md:text-5xl font-black mb-10 tracking-tighter text-center whisk-text-ombre">Saved & Explored Places</h3>
+               <h3 className="text-4xl md:text-5xl font-black mb-10 tracking-tighter text-center text-[var(--whisk-navy)]">Saved & Explored Places</h3>
                {savedPlaces.length > 0 ? (
                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                    {savedPlaces.map(place => (

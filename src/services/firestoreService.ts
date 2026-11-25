@@ -26,6 +26,7 @@ import {
   TripItinerary,
   UserRole,
 } from '../../types';
+import { resolvePostImage } from '../data/destinationMedia';
 
 // --- Defensive Payload Helpers ---
 const safeStr = (val: unknown, maxLen: number, fallback = ''): string => {
@@ -748,7 +749,7 @@ export async function publishGuideToFirestore(
       geoSummary: post.geoSummary ? safeStr(post.geoSummary, 1200) : undefined,
       content: safeStr(post.content, 20000, post.metaDescription),
       destination: safeStr(post.destination, 150, 'Destination'),
-      imageUrl: safeStr(post.imageUrl, 500, '/'),
+      imageUrl: safeStr(resolvePostImage(post), 500, resolvePostImage(post)),
       keywords: cleanKeywords,
       neighborhoods: cleanNeighborhoods,
       faqs: cleanFaqs,
@@ -774,10 +775,14 @@ export function subscribePublicGuides(
     (snapshot) => {
       const posts: BlogPost[] = snapshot.docs.map((d) => {
         const data = d.data();
-        return {
+        const basePost = {
           ...(data as Omit<BlogPost, 'id' | 'createdAt'>),
           id: d.id,
           createdAt: toIsoString(data.createdAt),
+        };
+        return {
+          ...basePost,
+          imageUrl: resolvePostImage(basePost),
         };
       });
       posts.sort(
