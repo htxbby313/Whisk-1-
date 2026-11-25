@@ -59,8 +59,12 @@ import {
   LocateFixed,
   Copy,
   Printer,
-  Wifi
+  Wifi,
+  Ticket,
+  CloudRain,
+  Armchair
 } from 'lucide-react';
+import { DuffelFlightSearchModal } from './src/components/DuffelFlightSearchModal';
 import { 
   generateItinerary, 
   generateBlogPost,
@@ -829,6 +833,7 @@ const ActionSidebar = ({
   onSavePlace,
   unlocked,
   onOpenPassport,
+  onOpenFlightSearch,
 }: {
   recommendations: Recommendation[];
   destination: string;
@@ -845,6 +850,7 @@ const ActionSidebar = ({
   }) => Promise<void>;
   unlocked: boolean;
   onOpenPassport: () => void;
+  onOpenFlightSearch?: (origin?: string) => void;
 }) => {
   const destinationQuery = encodeURIComponent(destination);
 
@@ -944,6 +950,15 @@ const ActionSidebar = ({
                   </div>
                 )}
                 <p className="text-slate-500 text-sm mb-5 leading-relaxed font-medium line-clamp-2">{rec.description}</p>
+                {rec.type === 'flight' && onOpenFlightSearch && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenFlightSearch(rec.departureAirport)}
+                    className="w-full mb-3 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <Armchair className="w-4 h-4 text-sky-600" /> Live Seats & Cabin Pricing (Duffel API)
+                  </button>
+                )}
                 <a href={rec.affiliateUrl} target="_blank" rel="noopener noreferrer" className="w-full vibrant-gradient text-white py-3.5 rounded-2xl font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:opacity-95 transition-opacity shadow-md">
                   Book Partner <ExternalLink className="w-4 h-4" />
                 </a>
@@ -955,6 +970,18 @@ const ActionSidebar = ({
       <div className="bg-[var(--whisk-navy)] rounded-[3rem] p-8 md:p-10 shadow-2xl text-white">
         <h3 className="text-2xl font-black mb-6 flex items-center gap-3 tracking-tighter"><Car className="text-[var(--whisk-saffron)] w-7 h-7" />Commuter Hub</h3>
         <div className="space-y-3">
+          {onOpenFlightSearch && (
+            <button
+              type="button"
+              onClick={() => onOpenFlightSearch()}
+              className="w-full bg-white/10 hover:bg-white/20 text-white p-4 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <Plane className="w-4 h-4 text-sky-300" /> Live Flights & Seats (Duffel API)
+              </span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          )}
           <a href="https://uber.com" target="_blank" rel="noopener noreferrer" className="w-full bg-white/10 text-white p-4 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center justify-between hover:bg-white/20 transition-colors">Uber Anywhere <ArrowRight className="w-4 h-4" /></a>
           <a href={`https://kayak.com/cars/${destinationQuery}`} target="_blank" rel="noopener noreferrer" className="w-full cyan-gradient text-white p-4 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center justify-between hover:opacity-95 transition-opacity">Rent a Car <ArrowRight className="w-4 h-4" /></a>
         </div>
@@ -1840,6 +1867,9 @@ const ItineraryDisplay = ({
 }) => {
   const [selectedMapDay, setSelectedMapDay] = React.useState<number | 'all'>('all');
   const [itineraryCopied, setItineraryCopied] = React.useState(false);
+  const [swappedRainyDays, setSwappedRainyDays] = React.useState<Set<number>>(new Set());
+  const [isDuffelModalOpen, setIsDuffelModalOpen] = React.useState<boolean>(false);
+  const [flightOriginContext, setFlightOriginContext] = React.useState<string>(itinerary.departureAirport || 'DFW');
   const allSources = itinerary.groundingSources || [];
   const mapsSources = allSources.filter((s: GroundingSource) => s.sourceType === 'maps');
   const isUnlocked = Boolean(itinerary.unlocked || hasActiveSubscription);
@@ -1900,6 +1930,13 @@ const ItineraryDisplay = ({
             <span aria-hidden="true">·</span>
             <span>{isUnlocked ? 'Full Access Unlocked' : `Free Preview (${freeVisibleCount} of ${itinerary.days.length} days)`}</span>
           </div>
+          {itinerary.nicheFocus && (
+            <div className="mb-4 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-amber-50 text-amber-900 font-bold text-xs border border-amber-300 shadow-2xs">
+              <Compass className="w-3.5 h-3.5 text-[var(--whisk-orange)]" />
+              <span>Bespoke Pursuit: {itinerary.nicheFocus}</span>
+              {itinerary.antiTouristTraps && <span className="text-amber-700 font-extrabold">· Anti-Tourist-Trap Active</span>}
+            </div>
+          )}
           <h1 className="text-4xl sm:text-6xl md:text-7xl font-black whisk-text-ombre mb-6 tracking-tighter leading-tight text-balance">
             {itinerary.title}
           </h1>
@@ -2028,9 +2065,77 @@ const ItineraryDisplay = ({
                          View Day {day.dayNumber} Route
                        </button>
                     </div>
+
+                    {/* Tomorrow.io Dynamic Rainy-Day Fallback Swap Bar */}
+                    {(() => {
+                      const isDaySwapped = swappedRainyDays.has(day.dayNumber);
+                      const hasRainyFallback = day.activities.some((a) => Boolean(a.rainyDayFallback));
+                      if (!hasRainyFallback) return null;
+                      return (
+                        <div className="bg-gradient-to-r from-sky-50 via-sky-50/70 to-indigo-50/70 border border-sky-200/90 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs mb-6">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 rounded-xl bg-white shadow-2xs text-sky-600 shrink-0">
+                              <CloudRain className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <div className="font-black text-[var(--whisk-navy)] flex items-center gap-1.5">
+                                <span>Tomorrow.io Weather Intel:</span>
+                                <span className="text-[10px] font-bold text-sky-700 bg-white px-2 py-0.5 rounded-full border border-sky-100">
+                                  Rain Fallback Ready
+                                </span>
+                              </div>
+                              <p className="text-slate-600 font-medium mt-0.5">
+                                {isDaySwapped
+                                  ? 'Active: Curated indoor museums, covered historic galleries & food halls.'
+                                  : 'Rain forecasted. Swap open-air walks for vetted indoor gems with 1 click.'}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSwappedRainyDays((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(day.dayNumber)) next.delete(day.dayNumber);
+                                else next.add(day.dayNumber);
+                                return next;
+                              });
+                            }}
+                            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                              isDaySwapped
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200'
+                                : 'vibrant-gradient text-white shadow-xs hover:opacity-95'
+                            }`}
+                          >
+                            {isDaySwapped ? (
+                              <>
+                                <Sun className="w-3.5 h-3.5 text-amber-600" /> Return to Sunny Route
+                              </>
+                            ) : (
+                              <>
+                                <Umbrella className="w-3.5 h-3.5" /> Switch to Rainy-Day Indoor Gems 🏛️
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })()}
                     
                     <div className={`space-y-8 transition-all duration-500 ${isDayLocked ? 'blur-md pointer-events-none select-none opacity-35' : ''}`}>
-                       {day.activities.map((activity, aIdx) => {
+                       {day.activities.map((baseActivity, aIdx) => {
+                         const isDaySwapped = swappedRainyDays.has(day.dayNumber);
+                         const activity = (isDaySwapped && baseActivity.rainyDayFallback)
+                           ? {
+                               ...baseActivity,
+                               location: baseActivity.rainyDayFallback.location,
+                               description: baseActivity.rainyDayFallback.description,
+                               insiderTip: baseActivity.rainyDayFallback.insiderTip || baseActivity.insiderTip,
+                               walkTime: baseActivity.rainyDayFallback.walkTime || baseActivity.walkTime,
+                               neighborhood: baseActivity.rainyDayFallback.neighborhood || baseActivity.neighborhood,
+                               isSwapped: true,
+                             }
+                           : { ...baseActivity, isSwapped: false };
+
                          const activityMapUrl = buildActivityMapsUrl(activity);
                          const isSpotSaved = savedPlaceNames.has(activity.location.toLowerCase());
                          return (
@@ -2076,6 +2181,11 @@ const ItineraryDisplay = ({
                                         {activity.neighborhood && (
                                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">
                                             📍 {activity.neighborhood}
+                                          </span>
+                                        )}
+                                        {activity.isSwapped && (
+                                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-sky-100 text-sky-800 border border-sky-300">
+                                            <Umbrella className="w-3 h-3 text-sky-600" /> Rainy-Day Indoor Swap Active
                                           </span>
                                         )}
                                       </div>
@@ -2134,6 +2244,46 @@ const ItineraryDisplay = ({
                                       </p>
                                     )}
                                  </div>
+
+                                 {/* Viator & GetYourGuide Partner Real-Time Ticket Slot Engine */}
+                                 {activity.ticketSlots && activity.ticketSlots.length > 0 && (
+                                   <div className="bg-gradient-to-r from-amber-50/90 via-orange-50/60 to-amber-50/90 border border-amber-200/90 rounded-2xl p-3.5 space-y-2 text-xs">
+                                     <div className="flex flex-wrap items-center justify-between gap-2">
+                                       <div className="flex items-center gap-1.5 font-black text-amber-950 uppercase tracking-wider">
+                                         <Ticket className="w-3.5 h-3.5 text-[var(--whisk-orange)]" />
+                                         <span>Live Ticket Slots (Viator / GYG):</span>
+                                       </div>
+                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                                         {activity.ticketStatus === 'likely_to_sell_out' ? '⚡ Likely to Sell Out' : '⚡ Instant Confirmation'}
+                                       </span>
+                                     </div>
+                                     <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                       {activity.ticketSlots.map((slot, sIdx) => (
+                                         <a
+                                           key={sIdx}
+                                           href={`https://www.viator.com/search/${encodeURIComponent(activity.location + ' ' + itinerary.destination)}?pid=809946&mcid=42383&medium=link`}
+                                           target="_blank"
+                                           rel="noopener noreferrer"
+                                           className="px-2.5 py-1 rounded-lg bg-white/95 border border-amber-300 text-amber-900 font-bold hover:bg-amber-500 hover:text-white hover:border-amber-600 transition-all flex items-center gap-1 shadow-xs"
+                                           title="Reserve live entry time slot"
+                                         >
+                                           <span>{slot}</span>
+                                           {activity.ticketPrice && (
+                                             <span className="opacity-70 font-normal">({activity.ticketPrice})</span>
+                                           )}
+                                         </a>
+                                       ))}
+                                       <a
+                                         href={`https://www.viator.com/search/${encodeURIComponent(activity.location + ' ' + itinerary.destination)}?pid=809946&mcid=42383&medium=link`}
+                                         target="_blank"
+                                         rel="noopener noreferrer"
+                                         className="text-[11px] font-bold text-[var(--whisk-orange)] hover:underline ml-auto flex items-center gap-0.5"
+                                       >
+                                         Check All Slots <ExternalLink className="w-3 h-3" />
+                                       </a>
+                                     </div>
+                                   </div>
+                                 )}
                               </div>
                            </div>
                          );
@@ -2247,6 +2397,19 @@ const ItineraryDisplay = ({
                                         )}
                                       </div>
 
+                                      {rec.type === 'flight' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (rec.departureAirport) setFlightOriginContext(rec.departureAirport);
+                                            setIsDuffelModalOpen(true);
+                                          }}
+                                          className="w-full bg-sky-50 border border-sky-200 text-sky-800 hover:bg-sky-100 py-2.5 px-3 rounded-xl font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                                        >
+                                          <Armchair className="w-3.5 h-3.5 text-sky-600" /> Live Seats & Cabin Pricing (Duffel API)
+                                        </button>
+                                      )}
+
                                       <a
                                         href={rec.affiliateUrl}
                                         target="_blank"
@@ -2332,9 +2495,19 @@ const ItineraryDisplay = ({
                onSavePlace={onSavePlace}
                unlocked={isUnlocked}
                onOpenPassport={onUnlock}
+               onOpenFlightSearch={() => setIsDuffelModalOpen(true)}
              />
           </div>
        </div>
+
+       {/* Duffel Real-Time Flight Search & Seat Selection Modal */}
+       <DuffelFlightSearchModal
+         isOpen={isDuffelModalOpen}
+         onClose={() => setIsDuffelModalOpen(false)}
+         destination={itinerary.destination}
+         defaultOrigin={flightOriginContext || itinerary.departureAirport}
+         startDate={itinerary.startDate}
+       />
     </div>
   );
 };
@@ -2364,6 +2537,8 @@ const TripPlannerForm = ({
     departureLocation: '',
     departureAirport: '',
     publishPublicGuide: true,
+    nicheFocus: '',
+    antiTouristTraps: false,
   });
 
   React.useEffect(() => {
@@ -2588,6 +2763,76 @@ const TripPlannerForm = ({
                   <button key={option} type="button" onClick={() => toggleAccessibility(option)} className={`px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${params.accessibility.includes(option) ? 'cyan-gradient text-white shadow-md' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-[var(--whisk-navy)]'}`}>{option}</button>
                 ))}
               </div>
+            </div>
+
+            {/* Bespoke Expeditions & Off-the-Beaten-Path Directives */}
+            <div className="bg-gradient-to-br from-amber-50/70 via-orange-50/40 to-slate-50 border-2 border-amber-200/80 rounded-3xl p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Compass className="w-5 h-5 text-[var(--whisk-orange)]" />
+                  <span className="text-sm font-black uppercase tracking-wider text-[var(--whisk-navy)]">
+                    Bespoke Expedition & Off-The-Beaten-Path
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300/80">
+                  Deep Niche Intelligence
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                Traveling for something specific? Request hyper-curated local pursuits—hunting outfitters, high-alpine ridge treks instead of ski resorts, biodynamic natural wine routes, or backcountry fly fishing. Whisk inverts tourist defaults to design around your true mission.
+              </p>
+              
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Specialized pursuit (e.g., Wild turkey hunting in South Island NZ, high-alpine hiking instead of skiing, natural wine trails)"
+                  className="w-full bg-white border border-amber-200 rounded-2xl py-3.5 px-4 outline-none focus:border-[var(--whisk-orange)] transition-all text-sm font-semibold text-[var(--whisk-navy)] placeholder:text-slate-400 placeholder:font-normal"
+                  value={params.nicheFocus || ''}
+                  onChange={(e) => setParams({ ...params, nicheFocus: e.target.value })}
+                />
+              </div>
+
+              {/* Quick Niche Chips */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  Quick Expedition Presets:
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: '🦃 Wild Game & Hunting Outfitters', text: 'Wild game & hunting outfitters with public conservation land permits' },
+                    { label: '🥾 Alpine Trekking (No Ski)', text: 'Summer high-alpine ridge hiking and mountain huts instead of skiing' },
+                    { label: '🎣 Backcountry Fly Fishing', text: 'Remote backcountry stream fly-fishing with licensed local river guides' },
+                    { label: '🍇 Natural Wine & Terroir', text: 'Boutique biodynamic natural wine cellars, family vineyards & terroir tasting' },
+                    { label: '🏺 Ancient Archaeology & Ruins', text: 'Off-path archaeological sites, ancient ruins, and historic artisan workshops' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => setParams({ ...params, nicheFocus: preset.text })}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        params.nicheFocus === preset.text
+                          ? 'bg-[var(--whisk-navy)] text-white shadow-xs'
+                          : 'bg-white/80 hover:bg-white text-slate-700 border border-amber-200/70 hover:border-amber-400'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Anti-Tourist-Trap Checkbox */}
+              <label className="flex items-center gap-3 pt-2 border-t border-amber-200/60 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={Boolean(params.antiTouristTraps)}
+                  onChange={(e) => setParams({ ...params, antiTouristTraps: e.target.checked })}
+                  className="w-4 h-4 rounded border-amber-300 accent-[var(--whisk-orange)]"
+                />
+                <span className="text-xs font-bold text-slate-700">
+                  Strict Anti-Tourist-Trap Filter (Bypass cliché tour buses, commercial souvenir corridors, and crowded tourist hotspots)
+                </span>
+              </label>
             </div>
 
             {/* Public Community Blog Post Toggle */}

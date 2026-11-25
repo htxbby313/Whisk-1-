@@ -21,12 +21,15 @@ interface WeatherDay {
   windKmh: number;
   condition: string;
   icon: string;
+  isRainy?: boolean;
+  rainRisk?: 'none' | 'moderate' | 'high';
 }
 
 interface WeatherResponse {
   locationName: string;
   country: string;
   timezone: string;
+  provider?: string;
   current: {
     tempC: number;
     condition: string;
@@ -108,8 +111,15 @@ export const WeatherForecast: React.FC<{ destination: string }> = ({ destination
             <Sun className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-[10px] font-black text-[var(--whisk-orange)] uppercase tracking-[0.35em]">
-              7-Day Forecast
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-[10px] font-black text-[var(--whisk-orange)] uppercase tracking-[0.35em]">
+                7-Day Forecast
+              </span>
+              {weather?.provider && (
+                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                  via {weather.provider}
+                </span>
+              )}
             </div>
             <h3 className="text-2xl md:text-3xl font-black text-[var(--whisk-navy)] tracking-tight">
               {weather
@@ -217,6 +227,14 @@ export const WeatherForecast: React.FC<{ destination: string }> = ({ destination
                   <Wind className="w-3 h-3" /> {day.windKmh}
                 </span>
               </div>
+
+              {day.isRainy && (
+                <div className="w-full text-center mt-0.5">
+                  <span className="inline-block text-[10px] font-bold text-sky-700 bg-sky-100/90 px-2 py-0.5 rounded-full">
+                    🌧️ Rain Fallback
+                  </span>
+                </div>
+              )}
             </div>
           ))}
         </div>

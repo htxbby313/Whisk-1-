@@ -15,6 +15,16 @@ export interface Activity {
   neighborhood?: string;
   isAnchor?: boolean;
   branchingReason?: string;
+  ticketSlots?: string[];
+  ticketPrice?: string;
+  ticketStatus?: 'available' | 'likely_to_sell_out' | 'instant_confirmation';
+  rainyDayFallback?: {
+    location: string;
+    description: string;
+    insiderTip?: string;
+    walkTime?: string;
+    neighborhood?: string;
+  };
 }
 
 export interface DayPlan {
@@ -22,6 +32,27 @@ export interface DayPlan {
   date?: string;
   theme: string;
   activities: Activity[];
+}
+
+export interface FlightOffer {
+  id: string;
+  airline: string;
+  airlineCode?: string;
+  airlineLogo?: string;
+  flightNumber: string;
+  departureAirport: string;
+  arrivalAirport: string;
+  departureTime: string;
+  arrivalTime: string;
+  duration: string;
+  stops: number;
+  cabinClass: 'Economy' | 'Premium Economy' | 'Business' | 'First';
+  price: string;
+  currency?: string;
+  seatsRemaining?: number;
+  bookingUrl: string;
+  baggageIncluded?: boolean;
+  aircraft?: string;
 }
 
 export interface Recommendation {
@@ -35,6 +66,8 @@ export interface Recommendation {
   departureAirport?: string;
   latitude?: number;
   longitude?: number;
+  ticketSlots?: string[];
+  flightOffers?: FlightOffer[];
 }
 
 export interface GroundingSource {
@@ -98,6 +131,8 @@ export interface TripItinerary {
   interests?: string[];
   blogPost?: BlogPost;
   unlocked?: boolean;
+  nicheFocus?: string;
+  antiTouristTraps?: boolean;
 }
 
 export type MembershipTier = 'Wanderer' | 'Explorer' | 'Cartographer';
@@ -124,6 +159,8 @@ export interface SearchParams {
   preferredSpots?: DiscoveredSpot[];
   latitude?: number;
   longitude?: number;
+  nicheFocus?: string;
+  antiTouristTraps?: boolean;
 }
 
 export interface SavedPlace {
