@@ -20,6 +20,7 @@ import {
   Search,
   Shield,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Users,
   X,
@@ -38,6 +39,7 @@ import {
 } from '../services/firestoreService';
 import { LANDMARK_POLAROIDS } from '../data/destinationMedia';
 import { WhiskLogo } from './WhiskLogo';
+import { AdminMarketingStudio } from './AdminMarketingStudio';
 import {
   AdminUserRecord,
   BlogPost,
@@ -46,7 +48,7 @@ import {
   UserRole,
 } from '../../types';
 
-type AdminSection = 'overview' | 'users' | 'guides';
+type AdminSection = 'overview' | 'marketing' | 'users' | 'guides';
 
 interface AdminDashboardProps {
   onNavigateHome: () => void;
@@ -57,6 +59,11 @@ const SECTION_META: Record<AdminSection, { label: string; description: string }>
   overview: {
     label: 'Usage Metrics',
     description: 'Live counts across registered travelers, generated trips, and community guides.',
+  },
+  marketing: {
+    label: 'Marketing Studio',
+    description:
+      'Produce shareable Whisk Boarding Pass social proof cards, 3D reels, AI images, videos, grounded hooks, and brand logo downloads for @whisk.travel.',
   },
   users: {
     label: 'Registered Users',
@@ -796,6 +803,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const navItems: { id: AdminSection; label: string; icon: React.ComponentType<any>; count?: number }[] = [
     { id: 'overview', label: 'Usage Metrics', icon: BarChart3 },
+    { id: 'marketing', label: 'Marketing Studio', icon: Sparkles },
     { id: 'users', label: 'Registered Users', icon: Users, count: metrics.totalUsers },
     { id: 'guides', label: 'Community Guides', icon: BookOpen, count: metrics.totalGuides },
   ];
@@ -1655,6 +1663,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     )}
                   </div>
                 </div>
+              )}
+
+              {/* SECTION 4: MARKETING STUDIO */}
+              {activeSection === 'marketing' && (
+                <AdminMarketingStudio
+                  itineraries={itineraries}
+                  totalUsers={metrics.totalUsers}
+                  totalItineraries={metrics.totalItineraries}
+                  publishedGuidesCount={metrics.publishedGuidesCount}
+                />
               )}
             </>
           )}

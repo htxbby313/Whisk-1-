@@ -381,6 +381,7 @@ export const StoryExporterModal: React.FC<StoryExporterModalProps> = ({
 }) => {
   const [themeId, setThemeId] = React.useState<StoryThemeId>('ivory');
   const [showBufferRings, setShowBufferRings] = React.useState<boolean>(true);
+  const [showSocialProof, setShowSocialProof] = React.useState<boolean>(true);
   const [screenshotMode, setScreenshotMode] = React.useState<boolean>(false);
   const [downloading, setDownloading] = React.useState<boolean>(false);
   const [downloadedNotice, setDownloadedNotice] = React.useState<boolean>(false);
@@ -887,8 +888,20 @@ export const StoryExporterModal: React.FC<StoryExporterModalProps> = ({
       ctx.textAlign = 'right';
       ctx.fillStyle = theme.accent;
       ctx.font = '800 18px "Plus Jakarta Sans", Inter, system-ui, sans-serif';
-      ctx.fillText('READY FOR BOARDING', innerX + innerW, cardY + cardH - 54);
+      ctx.fillText(
+        showSocialProof ? 'PLANNED ON WHISK.TRAVEL' : 'READY FOR BOARDING',
+        innerX + innerW,
+        cardY + cardH - 54
+      );
       ctx.textAlign = 'left';
+
+      if (showSocialProof) {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = themeId === 'ivory' ? 'rgba(20, 25, 35, 0.72)' : 'rgba(255, 255, 255, 0.88)';
+        ctx.font = '800 24px "Plus Jakarta Sans", Inter, system-ui, sans-serif';
+        ctx.fillText('Build your free walkable boarding pass at whisk.travel', W / 2, H - 54);
+        ctx.textAlign = 'left';
+      }
 
       const dataUrl = canvas.toDataURL('image/png', 1.0);
       const slug = itinerary.destination
@@ -921,6 +934,7 @@ export const StoryExporterModal: React.FC<StoryExporterModalProps> = ({
     dateDisplay,
     allStops,
     showBufferRings,
+    showSocialProof,
     featuredAnchorIdSet,
     walkMinutes,
     anchorStopIds.length,
@@ -1235,10 +1249,21 @@ export const StoryExporterModal: React.FC<StoryExporterModalProps> = ({
             <span style={{ color: theme.inkMuted }}>
               {origin.code}-{dest.code} · {itinerary.days.length} Days
             </span>
-            <span style={{ color: theme.accent }}>Ready for Boarding</span>
+            <span style={{ color: theme.accent }}>
+              {showSocialProof ? 'Planned on whisk.travel' : 'Ready for Boarding'}
+            </span>
           </div>
         </div>
       </div>
+      {showSocialProof && (
+        <div
+          className={`absolute bottom-1.5 inset-x-0 text-center text-[8.5px] font-extrabold tracking-wide ${
+            themeId === 'ivory' ? 'text-slate-800/75' : 'text-white/90'
+          }`}
+        >
+          Build your free walkable boarding pass at whisk.travel
+        </div>
+      )}
     </div>
   );
 
@@ -1367,6 +1392,33 @@ export const StoryExporterModal: React.FC<StoryExporterModalProps> = ({
                 <span
                   className={`block w-4 h-4 rounded-full bg-white shadow-sm transition-transform absolute top-1 ${
                     showBufferRings ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Social Proof Tagline Toggle */}
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200/70">
+              <div>
+                <div className="text-xs font-black text-[var(--whisk-navy)]">
+                  Show whisk.travel Proof Tag
+                </div>
+                <div className="text-[11px] font-medium text-slate-500">
+                  Add @whisk.travel shareable CTA strip
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={showSocialProof}
+                onClick={() => setShowSocialProof((v) => !v)}
+                className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 ${
+                  showSocialProof ? 'bg-[#FF3B30]' : 'bg-slate-300'
+                }`}
+              >
+                <span
+                  className={`block w-4 h-4 rounded-full bg-white shadow-sm transition-transform absolute top-1 ${
+                    showSocialProof ? 'translate-x-6' : 'translate-x-1'
                   }`}
                 />
               </button>

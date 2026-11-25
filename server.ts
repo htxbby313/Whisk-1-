@@ -29,7 +29,11 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 3000;
 const app = express();
 
-app.use(express.json({ limit: '10mb' }));
+// Trust the single reverse-proxy hop (Cloud Run / preview proxy) so rate limiting
+// resolves real client IPs accurately without allowing header spoofing.
+app.set('trust proxy', 1);
+
+app.use(express.json({ limit: '25mb' }));
 
 // Apply rate limiting across all API and authentication endpoints
 export const apiLimiter = rateLimit({
@@ -2307,6 +2311,383 @@ app.post(['/api/gemini/generate', '/api/generate'], async (req, res) => {
   }
 });
 
+// --- Admin-Protected Whisk Marketing Studio Routes ---
+const BOOTSTRAPPED_ADMIN_EMAIL = 'colemanantheus@gmail.com';
+
+const requireAdmin = async (
+  req: AuthRequest,
+  res: express.Response,
+  next: express.NextFunction
+) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Unauthorized: Sign in required' });
+  }
+  const email = typeof req.user.email === 'string' ? req.user.email.trim().toLowerCase() : '';
+  if (req.user.email_verified && email === BOOTSTRAPPED_ADMIN_EMAIL) {
+    return next();
+  }
+  if ((req.user as Record<string, any>).role === 'admin' || (req.user as Record<string, any>).admin === true) {
+    return next();
+  }
+  try {
+    const snap = await adminDb.collection('users').doc(req.user.uid).get();
+    if (snap.exists && snap.data()?.role === 'admin') {
+      return next();
+    }
+  } catch (err) {
+    console.warn('Admin Firestore role check fallback:', (err as Error)?.message || err);
+  }
+  return res.status(403).json({ error: 'Forbidden: Administrator access required' });
+};
+
+const ALLOWED_MARKETING_CHAT_MODELS = new Set([
+  'gemini-4-hydrogen',
+  'gemini-4-neon',
+  'gemini-4-carbon',
+  'gemini-3.1-flash-lite',
+]);
+
+const ALLOWED_IMAGE_ASPECTS = new Set(['9:16', '16:9', '4:5', '1:1', '3:4', '4:3']);
+const ALLOWED_IMAGE_SIZES = new Set(['1K', '2K']);
+const ALLOWED_VIDEO_ASPECTS = new Set(['9:16', '16:9']);
+const ALLOWED_VIDEO_DURATIONS = new Set(['5s', '6s', '8s', '10s', '12s', '15s']);
+const ALLOWED_VIDEO_RESOLUTIONS = new Set(['720p', '1080p']);
+
+function stripDataUrlPrefix(input: string): { base64: string; mimeType: string } {
+  const trimmed = input.trim();
+  const match = trimmed.match(/^data:([a-zA-Z0-9.+/-]+);base64,(.+)$/s);
+  if (match) {
+    return { mimeType: match[1], base64: match[2].replace(/\s+/g, '') };
+  }
+  return { mimeType: 'image/png', base64: trimmed.replace(/\s+/g, '') };
+}
+
+// 1. Live Google Search + Google Maps Grounded Campaign Research (gemini-4-hydrogen)
+app.post('/api/marketing/trends-and-spots', apiLimiter, requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const rawDest = typeof req.body?.destination === 'string' ? req.body.destination.trim().slice(0, 140) : '';
+    const platform = typeof req.body?.platform === 'string' ? req.body.platform.trim().slice(0, 40) : 'instagram-reel';
+    const campaignGoal = typeof req.body?.campaignGoal === 'string' ? req.body.campaignGoal.trim().slice(0, 200) : 'Showcase Whisk Boarding Pass social proof and walkable itineraries';
+    if (!rawDest) {
+      return res.status(400).json({ error: 'Destination is required' });
+    }
+
+    const ai = getAi();
+
+    const [searchRes, mapsRes] = await Promise.all([
+      ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: `You are the Head of Social Growth for Whisk (whisk.travel, @whisk.travel).
+Research CURRENT travel trends, viral ${platform} hooks, seasonal timing, and high-performing hashtags for "${rawDest}".
+Campaign goal: ${campaignGoal}.
+
+Return ONLY valid JSON (no markdown fences) with this structure:
+{
+  "viralHooks": ["3 punchy 1-line opening hooks under 12 words tailored for Instagram Reels & TikTok"],
+  "boardingPassHeadline": "Short luxury editorial headline (max 48 chars) for the Whisk Boarding Pass social proof card",
+  "socialProofQuote": "Realistic, grounded traveler-style pull quote highlighting effortless walkable planning on whisk.travel (max 120 chars)",
+  "caption": "Ready-to-post Instagram & TikTok caption mentioning @whisk.travel and whisk.travel",
+  "hashtags": ["8 relevant travel + destination hashtags starting with #"],
+  "imagePrompt": "Editorial 9:16 photography prompt showcasing ${rawDest} at golden hour for a luxury travel promo visual",
+  "videoPrompt": "Cinematic 9:16 vertical travel reel motion prompt for ${rawDest} with smooth camera movement and warm atmosphere",
+  "trendSummary": "2 concise sentences on what is trending right now for travelers heading to ${rawDest}"
+}`,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      }),
+      ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: `Find 4 real, currently open, highly-rated iconic or hidden-gem local spots (cafés, viewpoints, boutiques, or neighborhood restaurants) in "${rawDest}" that look extraordinary on Instagram & TikTok and work well as walkable anchor stops on a Whisk Boarding Pass.
+
+Return ONLY valid JSON (no markdown fences):
+{
+  "verifiedSpots": [
+    {
+      "name": "Exact place name",
+      "neighborhood": "Neighborhood name",
+      "whyItConverts": "Short 8-12 word visual hook for social media"
+    }
+  ]
+}`,
+        config: {
+          tools: [{ googleMaps: {} }],
+        },
+      }),
+    ]);
+
+    const searchData = parseModelJson(searchRes.text, {
+      viralHooks: [],
+      boardingPassHeadline: `${rawDest} — Walkable Route`,
+      socialProofQuote: `Planned our entire ${rawDest} trip in 30 seconds on whisk.travel.`,
+      caption: `Your next ${rawDest} escape, mapped in walkable zones. Build your own Boarding Pass free at whisk.travel · @whisk.travel`,
+      hashtags: ['#whisktravel', '#travelitinerary', '#traveltok', '#wandering'],
+      imagePrompt: `Editorial 35mm golden hour view of ${rawDest}, warm sunlit architecture, atmospheric travel photography, vertical framing`,
+      videoPrompt: `Cinematic slow-motion tracking shot through ${rawDest} at golden hour, warm sunbeams, gentle breeze, luxury editorial travel film`,
+      trendSummary: `Travelers are prioritizing walkable neighborhood routes and curated local stops in ${rawDest}.`,
+    });
+
+    const mapsData = parseModelJson(mapsRes.text, { verifiedSpots: [] });
+
+    const searchSources = extractGroundingSources(searchRes);
+    const mapsSources = extractGroundingSources(mapsRes);
+    const mergedSources = Array.from(
+      new Map([...searchSources, ...mapsSources].map((s) => [s.uri, s])).values()
+    );
+
+    res.json({
+      destination: rawDest,
+      platform,
+      ...searchData,
+      verifiedSpots: Array.isArray(mapsData?.verifiedSpots) ? mapsData.verifiedSpots.slice(0, 5) : [],
+      sources: mergedSources,
+    });
+  } catch (error: any) {
+    const parsedErr = parseGeminiApiError(error);
+    console.error('Marketing trend/maps research error:', parsedErr.message);
+    res.status(parsedErr.status).json({ error: parsedErr.message, code: parsedErr.status });
+  }
+});
+
+// 2. Create & Edit Shareable Marketing Images (gemini-nano-banana-2.1 via Interactions API)
+app.post('/api/marketing/image', apiLimiter, requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim().slice(0, 2000) : '';
+    const aspectRatio = ALLOWED_IMAGE_ASPECTS.has(req.body?.aspectRatio) ? req.body.aspectRatio : '9:16';
+    const imageSize = ALLOWED_IMAGE_SIZES.has(req.body?.imageSize) ? req.body.imageSize : '1K';
+    const sourceImageDataUrl = typeof req.body?.sourceImageDataUrl === 'string' ? req.body.sourceImageDataUrl : '';
+
+    if (!prompt) {
+      return res.status(400).json({ error: 'A visual prompt is required.' });
+    }
+
+    const ai = getAi();
+    let inputPayload: any = prompt;
+
+    if (sourceImageDataUrl) {
+      const { base64, mimeType } = stripDataUrlPrefix(sourceImageDataUrl);
+      if (!base64) {
+        return res.status(400).json({ error: 'Invalid source image payload.' });
+      }
+      inputPayload = [
+        {
+          type: 'image',
+          data: base64,
+          mime_type: mimeType,
+        },
+        {
+          type: 'text',
+          text: prompt,
+        },
+      ];
+    }
+
+    const interaction: any = await ai.interactions.create({
+      model: 'gemini-nano-banana-2.1',
+      input: inputPayload,
+      response_modalities: ['image', 'text'],
+      generation_config: {
+        image_config: {
+          aspect_ratio: aspectRatio,
+          image_size: imageSize,
+        },
+      },
+    } as any);
+
+    let imageBase64: string | null = interaction?.output_image?.data || null;
+    let imageMime: string = interaction?.output_image?.mime_type || 'image/png';
+    let captionText: string = interaction?.output_text || '';
+
+    if (!imageBase64 && Array.isArray(interaction?.steps)) {
+      for (const step of interaction.steps) {
+        if (step?.type === 'model_output' && Array.isArray(step.content)) {
+          const imgPart = step.content.find((c: any) => c?.type === 'image' && c?.data);
+          if (imgPart) {
+            imageBase64 = imgPart.data;
+            imageMime = imgPart.mime_type || 'image/png';
+          }
+          const txtPart = step.content.find((c: any) => c?.type === 'text' && c?.text);
+          if (txtPart && !captionText) {
+            captionText = txtPart.text;
+          }
+        }
+      }
+    }
+
+    if (!imageBase64) {
+      return res.status(502).json({
+        error: 'The image model did not return image bytes. Try refining your prompt.',
+      });
+    }
+
+    res.json({
+      imageDataUrl: `data:${imageMime};base64,${imageBase64}`,
+      mimeType: imageMime,
+      text: captionText,
+      interactionId: interaction?.id || null,
+      model: 'gemini-nano-banana-2.1',
+    });
+  } catch (error: any) {
+    const parsedErr = parseGeminiApiError(error);
+    console.error('Marketing image generation/edit error:', parsedErr.message);
+    res.status(parsedErr.status).json({ error: parsedErr.message, code: parsedErr.status });
+  }
+});
+
+// 3. Text-to-Video & Image-to-Video Reel Generator (gemini-omni-1.2-flash via Interactions API)
+app.post('/api/marketing/video', apiLimiter, requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim().slice(0, 1800) : '';
+    const aspectRatio = ALLOWED_VIDEO_ASPECTS.has(req.body?.aspectRatio) ? req.body.aspectRatio : '9:16';
+    const duration = ALLOWED_VIDEO_DURATIONS.has(req.body?.duration) ? req.body.duration : '6s';
+    const resolution = ALLOWED_VIDEO_RESOLUTIONS.has(req.body?.resolution) ? req.body.resolution : '720p';
+    const sourceImageDataUrl = typeof req.body?.sourceImageDataUrl === 'string' ? req.body.sourceImageDataUrl : '';
+    const previousInteractionId =
+      typeof req.body?.previousInteractionId === 'string' && req.body.previousInteractionId.trim()
+        ? req.body.previousInteractionId.trim().slice(0, 200)
+        : undefined;
+
+    if (!prompt) {
+      return res.status(400).json({ error: 'A motion prompt is required to generate video.' });
+    }
+
+    const ai = getAi();
+    let inputPayload: any = prompt;
+
+    if (sourceImageDataUrl && !previousInteractionId) {
+      const { base64, mimeType } = stripDataUrlPrefix(sourceImageDataUrl);
+      if (!base64) {
+        return res.status(400).json({ error: 'Invalid source image for animation.' });
+      }
+      inputPayload = [
+        {
+          type: 'image',
+          mime_type: mimeType,
+          data: base64,
+        },
+        {
+          type: 'text',
+          text: prompt,
+        },
+      ];
+    }
+
+    const interaction: any = await ai.interactions.create(
+      {
+        model: 'gemini-omni-1.2-flash',
+        ...(previousInteractionId ? { previous_interaction_id: previousInteractionId } : {}),
+        input: inputPayload,
+        background: false,
+        store: true,
+        stream: false,
+        response_format: {
+          type: 'video',
+          aspect_ratio: aspectRatio,
+          duration,
+          resolution,
+        },
+      } as any,
+      { timeout: 300000 }
+    );
+
+    let videoData: string | null = interaction?.output_video?.data || null;
+    let videoUri: string | null = interaction?.output_video?.uri || null;
+    let videoMime: string = interaction?.output_video?.mime_type || 'video/mp4';
+
+    if (!videoData && !videoUri && Array.isArray(interaction?.steps)) {
+      for (const step of interaction.steps) {
+        if (step?.type === 'model_output' && Array.isArray(step.content)) {
+          const vPart = step.content.find((c: any) => c?.type === 'video' && (c?.data || c?.uri));
+          if (vPart) {
+            videoData = vPart.data || null;
+            videoUri = vPart.uri || null;
+            videoMime = vPart.mime_type || 'video/mp4';
+          }
+        }
+      }
+    }
+
+    if (!videoData && !videoUri) {
+      return res.status(502).json({
+        error: 'Video generation completed without playable output. Please adjust the prompt and try again.',
+      });
+    }
+
+    res.json({
+      videoDataUrl: videoData ? `data:${videoMime};base64,${videoData}` : videoUri,
+      mimeType: videoMime,
+      interactionId: interaction?.id || null,
+      aspectRatio,
+      duration,
+      resolution,
+      model: 'gemini-omni-1.2-flash',
+    });
+  } catch (error: any) {
+    const parsedErr = parseGeminiApiError(error);
+    console.error('Marketing video generation error:', parsedErr.message);
+    res.status(parsedErr.status).json({ error: parsedErr.message, code: parsedErr.status });
+  }
+});
+
+// 4. Multi-Turn Admin Marketing Creative Director Chatbot (gemini-4-hydrogen / neon / carbon / 3.1-flash-lite)
+app.post('/api/marketing/chat', apiLimiter, requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const message = typeof req.body?.message === 'string' ? req.body.message.trim().slice(0, 4000) : '';
+    const requestedModel = typeof req.body?.model === 'string' ? req.body.model.trim() : 'gemini-4-hydrogen';
+    const model = ALLOWED_MARKETING_CHAT_MODELS.has(requestedModel) ? requestedModel : 'gemini-4-hydrogen';
+    const useSearch = Boolean(req.body?.useSearch);
+    const contextSummary =
+      typeof req.body?.contextSummary === 'string' ? req.body.contextSummary.trim().slice(0, 1200) : '';
+    const rawHistory = Array.isArray(req.body?.history) ? req.body.history.slice(-16) : [];
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required.' });
+    }
+
+    const ai = getAi();
+    const contents = [
+      ...rawHistory
+        .filter((m: any) => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string' && m.text.trim())
+        .map((m: any) => ({
+          role: m.role,
+          parts: [{ text: m.text.slice(0, 3000) }],
+        })),
+      { role: 'user', parts: [{ text: message }] },
+    ];
+
+    const systemInstruction = `You are Whisk's Senior Brand & Growth Creative Director for whisk.travel (@whisk.travel on Instagram & TikTok).
+Your specialty is turning Whisk's signature 9:16 Luxury Boarding Pass itineraries, walkable anchor maps, and real traveler proof into high-converting Instagram Reels, TikToks, Stories, and Carousel ads.
+Guidelines:
+- Always keep copy punchy, editorial, and traveler-first (never corporate fluff).
+- Give concrete shot-by-shot TikTok/Reels scripts, 3-second scroll-stopping hooks, on-screen text overlays, and clear CTAs pointing to whisk.travel or @whisk.travel.
+- Keep responses concise and immediately copy-pasteable for the admin.
+${contextSummary ? `\nActive Campaign Context:\n${contextSummary}` : ''}`;
+
+    const config: Record<string, any> = {
+      systemInstruction,
+    };
+    if (useSearch) {
+      config.tools = [{ googleSearch: {} }];
+    }
+
+    const response = await ai.models.generateContent({
+      model,
+      contents,
+      config,
+    });
+
+    res.json({
+      text: response.text || 'I could not generate a reply right now. Please try again.',
+      model,
+      sources: extractGroundingSources(response),
+    });
+  } catch (error: any) {
+    const parsedErr = parseGeminiApiError(error);
+    console.error('Marketing director chat error:', parsedErr.message);
+    res.status(parsedErr.status).json({ error: parsedErr.message, code: parsedErr.status });
+  }
+});
+
 // --- Authenticated Cloud SQL Trip Toolkit Routes ---
 app.post('/api/sql/users/sync', apiLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -2538,13 +2919,19 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 // Organic SEO Crawler Endpoints
+const PRODUCTION_DOMAIN = 'https://whisk.travel';
+
 app.get('/robots.txt', (req, res) => {
-  const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+  const baseUrl =
+    process.env.APP_URL ||
+    (process.env.NODE_ENV === 'production' ? PRODUCTION_DOMAIN : `${req.protocol}://${req.get('host')}`);
   res.type('text/plain').send(`User-agent: *\nAllow: /\nSitemap: ${baseUrl}/sitemap.xml\n`);
 });
 
 app.get('/sitemap.xml', (req, res) => {
-  const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+  const baseUrl =
+    process.env.APP_URL ||
+    (process.env.NODE_ENV === 'production' ? PRODUCTION_DOMAIN : `${req.protocol}://${req.get('host')}`);
   const today = new Date().toISOString().split('T')[0];
   const urls = [
     `  <url><loc>${baseUrl}/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>`,

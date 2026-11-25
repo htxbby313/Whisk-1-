@@ -331,34 +331,6 @@ export const DESTINATION_IMAGE_BY_KEY: Record<string, string[]> = {
   tanzania: [serengetiImg],
   lofoten: [lofotenImg],
   norway: [lofotenImg],
-  newzealand: ['https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=1200&q=80'],
-  queenstown: ['https://images.unsplash.com/photo-1507699622108-4be3abd695ad?auto=format&fit=crop&w=1200&q=80'],
-  auckland: ['https://images.unsplash.com/photo-1507699622108-4be3abd695ad?auto=format&fit=crop&w=1200&q=80'],
-  london: ['https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=1200&q=80'],
-  uk: ['https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=1200&q=80'],
-  britain: ['https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=1200&q=80'],
-  hawaii: ['https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80'],
-  honolulu: ['https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80'],
-  maui: ['https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80'],
-  costarica: ['https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1200&q=80'],
-  thailand: ['https://images.unsplash.com/photo-1528181304800-259b08848526?auto=format&fit=crop&w=1200&q=80'],
-  bangkok: ['https://images.unsplash.com/photo-1508009603885-50cf7c579365?auto=format&fit=crop&w=1200&q=80'],
-  phuket: ['https://images.unsplash.com/photo-1528181304800-259b08848526?auto=format&fit=crop&w=1200&q=80'],
-  ireland: ['https://images.unsplash.com/photo-1590089415225-401ed6f9db8e?auto=format&fit=crop&w=1200&q=80'],
-  dublin: ['https://images.unsplash.com/photo-1590089415225-401ed6f9db8e?auto=format&fit=crop&w=1200&q=80'],
-  scotland: ['https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?auto=format&fit=crop&w=1200&q=80'],
-  edinburgh: ['https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?auto=format&fit=crop&w=1200&q=80'],
-  germany: ['https://images.unsplash.com/photo-1467269204594-9661b134dd2b?auto=format&fit=crop&w=1200&q=80'],
-  berlin: ['https://images.unsplash.com/photo-1467269204594-9661b134dd2b?auto=format&fit=crop&w=1200&q=80'],
-  austria: ['https://images.unsplash.com/photo-1516550893923-42d28e5677af?auto=format&fit=crop&w=1200&q=80'],
-  vienna: ['https://images.unsplash.com/photo-1516550893923-42d28e5677af?auto=format&fit=crop&w=1200&q=80'],
-  california: ['https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=1200&q=80'],
-  sanfrancisco: ['https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=1200&q=80'],
-  losangeles: ['https://images.unsplash.com/photo-1580655653885-65763b2597d0?auto=format&fit=crop&w=1200&q=80'],
-  colorado: ['https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80'],
-  utah: ['https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=1200&q=80'],
-  dallas: ['https://images.unsplash.com/photo-1531218150217-54595bc2b934?auto=format&fit=crop&w=1200&q=80'],
-  texas: ['https://images.unsplash.com/photo-1531218150217-54595bc2b934?auto=format&fit=crop&w=1200&q=80'],
 };
 
 export const LOCAL_TRAVEL_IMAGE_POOL = [
@@ -390,27 +362,86 @@ export const LOCAL_TRAVEL_IMAGE_POOL = [
   lofotenImg,
 ];
 
-export function getVerifiedDestinationImage(destination: string, seed?: string): string {
-  if (!destination) {
-    return LOCAL_TRAVEL_IMAGE_POOL[0];
-  }
-  const clean = destination.toLowerCase().replace(/[^a-z0-9]/g, '');
+const LOCAL_TRAVEL_IMAGE_SET = new Set<string>(LOCAL_TRAVEL_IMAGE_POOL);
 
-  for (const [key, imgs] of Object.entries(DESTINATION_IMAGE_BY_KEY)) {
-    if (clean.includes(key) && imgs && imgs.length > 0) {
-      return imgs[0];
+const SORTED_DESTINATION_KEYS = Object.keys(DESTINATION_IMAGE_BY_KEY).sort(
+  (a, b) => b.length - a.length
+);
+
+function hashSeed(input: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+export function getVerifiedDestinationImage(
+  destination?: string,
+  seed?: string
+): string {
+  const dest = (destination || '').trim();
+  const cleanDest = dest.toLowerCase().replace(/[^a-z]/g, '');
+  const seedKey = `${dest.toLowerCase()}|${(seed || '').trim()}`;
+
+  if (cleanDest) {
+    for (const key of SORTED_DESTINATION_KEYS) {
+      if (cleanDest.includes(key)) {
+        const matches = DESTINATION_IMAGE_BY_KEY[key];
+        if (matches && matches.length > 0) {
+          return matches[hashSeed(seedKey) % matches.length];
+        }
+      }
     }
   }
 
-  const hash = Array.from(destination + (seed || '')).reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  return LOCAL_TRAVEL_IMAGE_POOL[hash % LOCAL_TRAVEL_IMAGE_POOL.length];
+  return LOCAL_TRAVEL_IMAGE_POOL[hashSeed(seedKey || 'whisk') % LOCAL_TRAVEL_IMAGE_POOL.length];
 }
 
-export function resolvePostImage(post?: { destination?: string; imageUrl?: string; title?: string } | null): string {
-  if (!post) return LOCAL_TRAVEL_IMAGE_POOL[0];
-  const url = (post.imageUrl || '').trim();
-  if (url && url !== '/' && url !== 'undefined' && !url.endsWith('/undefined')) {
-    return url;
+export function resolvePostImage(post: {
+  imageUrl?: string;
+  destination?: string;
+  id?: string;
+  title?: string;
+}): string {
+  const raw = typeof post.imageUrl === 'string' ? post.imageUrl.trim() : '';
+  const fallback = () =>
+    getVerifiedDestinationImage(post.destination, post.id || post.title);
+
+  if (!raw || raw === '/' || raw === '#') {
+    return fallback();
   }
-  return getVerifiedDestinationImage(post.destination || '', post.title || post.destination);
+
+  if (LOCAL_TRAVEL_IMAGE_SET.has(raw)) {
+    return raw;
+  }
+
+  if (raw.startsWith('/assets/') || raw.startsWith('/src/assets/')) {
+    // Stale Vite build hash or dev asset path stored in Firestore — resolve to current bundled image
+    return fallback();
+  }
+
+  if (raw.startsWith('data:image/')) {
+    return raw;
+  }
+
+  if (raw.startsWith('/')) {
+    return raw;
+  }
+
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      if (parsed.hostname.includes('source.unsplash.com')) {
+        return fallback();
+      }
+      return raw;
+    }
+  } catch {
+    // Invalid URL — fall back to verified local destination image
+  }
+
+  return fallback();
 }
+
