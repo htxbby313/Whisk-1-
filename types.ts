@@ -10,6 +10,11 @@ export interface Activity {
   placeId?: string;
   link?: string;
   userRating?: number;
+  energyLevel?: 'morning_spark' | 'recharge' | 'golden_hour' | 'evening_unwind';
+  walkTime?: string;
+  neighborhood?: string;
+  isAnchor?: boolean;
+  branchingReason?: string;
 }
 
 export interface DayPlan {

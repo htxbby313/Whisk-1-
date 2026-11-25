@@ -248,6 +248,41 @@ const MapRoutePolylines: React.FC<{
   return null;
 };
 
+/**
+ * Renders a 10-15 minute walking buffer circle (~850m radius) around the active anchor or
+ * selected spot to visually guide travelers within walking micro-buffers and avoid transit fatigue.
+ */
+const MapWalkingBufferCircle: React.FC<{
+  selectedStop: MappedStop | null;
+  anchorStop: MappedStop | null;
+  enabled: boolean;
+}> = ({ selectedStop, anchorStop, enabled }) => {
+  const map = useMap();
+
+  React.useEffect(() => {
+    const g = (window as any).google;
+    const target = selectedStop || anchorStop;
+    if (!map || !g?.maps?.Circle || !target || !enabled) return;
+
+    const circle = new g.maps.Circle({
+      center: { lat: target.latitude, lng: target.longitude },
+      radius: 850,
+      fillColor: '#FF7A00',
+      fillOpacity: 0.12,
+      strokeColor: '#FF7A00',
+      strokeOpacity: 0.65,
+      strokeWeight: 1.5,
+      map,
+    });
+
+    return () => {
+      circle.setMap(null);
+    };
+  }, [map, selectedStop, anchorStop, enabled]);
+
+  return null;
+};
+
 const MapStatusWatcher: React.FC = () => {
   const status = useApiLoadingStatus();
 
@@ -341,6 +376,7 @@ export const ItineraryMap: React.FC<ItineraryMapProps> = ({
   const [internalDay, setInternalDay] = React.useState<number | 'all'>('all');
   const [selectedStopId, setSelectedStopId] = React.useState<string | null>(null);
   const [fitSignal, setFitSignal] = React.useState<number>(0);
+  const [showWalkRadius, setShowWalkRadius] = React.useState<boolean>(true);
 
   const selectedDay = controlledDay !== undefined ? controlledDay : internalDay;
   const setSelectedDay = React.useCallback(
@@ -673,8 +709,21 @@ export const ItineraryMap: React.FC<ItineraryMapProps> = ({
               })}
             </div>
 
-            {/* Prev / Next Day Stepper */}
+            {/* Prev / Next Day Stepper & Walk Radius Toggle */}
             <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowWalkRadius((prev) => !prev)}
+                className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
+                  showWalkRadius
+                    ? 'bg-orange-50 border-orange-200 text-orange-700'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+                title="Toggle 12-minute walkable anchor micro-buffer radius on map"
+              >
+                <span>🚶</span>
+                <span className="hidden sm:inline">12-min Walk Radius</span>
+              </button>
               <button
                 type="button"
                 disabled={selectedDay === 'all' || prevDayNumber === null}
@@ -800,6 +849,11 @@ export const ItineraryMap: React.FC<ItineraryMapProps> = ({
                 prevBridgeStop={prevBridgeStop}
                 nextBridgeStop={nextBridgeStop}
                 selectedDay={selectedDay}
+              />
+              <MapWalkingBufferCircle
+                selectedStop={selectedStop}
+                anchorStop={visibleStops[0] || null}
+                enabled={showWalkRadius}
               />
 
               {visibleStops.map((stop) => (

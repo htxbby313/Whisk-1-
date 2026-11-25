@@ -1114,12 +1114,18 @@ app.post(['/api/gemini/itinerary', '/api/itinerary'], async (req, res) => {
     - Pace: ${params.pace || 'Moderate'}
     - Accessibility Needs: ${(params.accessibility && params.accessibility.length > 0) ? params.accessibility.join(', ') : 'None specified'}${preferredSpotsSection}
 
-    Strict Rules:
+    Strict Rules & Human Energy Curve Pacing:
     1. Keep descriptions concise, lively, and practical so the schedule is crisp and scannable.
-    2. Every activity 'location' MUST be a specific real-world venue, landmark, restaurant, or neighborhood in ${params.destination} (never generic phrases like "Local dinner"), and include a concise 1-sentence 'insiderTip' with verified timing, dish, or logistics advice.
-    3. For every recommendation (flight, hotel, restaurant, tour), include realistic 'price', 'availability', and 'dayNumbers' (array of 1-indexed day numbers where that booking is utilized: put flights & hotel check-in on [1], and each restaurant or tour on the exact day number(s) it appears in the itinerary).
-    4. For flight recommendations, include 'departureAirport' matching "${resolvedDepartureAirport || 'Major Hub'}".
-    5. Directly weave any accessibility requirements into activity descriptions and recommendations.`;
+    2. Energy Curve: Structure each day around realistic traveler energy:
+       - Morning Spark ('morning_spark'): Engaging cultural sights, iconic landmarks, or morning strolls before peak crowds.
+       - Midday Recharge Window ('recharge'): Mandatory 60-90 min pause at an atmospheric shaded cafe, garden, or quiet local spot to recharge without fatigue.
+       - Golden Hour ('golden_hour'): Late-afternoon scenic viewpoint, terrace, or golden hour canal/street walk.
+       - Evening Unwind ('evening_unwind'): Authentic, unhurried dinner and relaxed evening stroll.
+    3. Walkable Micro-Buffers: Cluster sequential activities within a 10-15 minute walk or short transit. Include realistic 'walkTime' (e.g., '7 min walk') and specific 'neighborhood' (e.g., 'Monti', 'Le Marais', 'Daikanyama').
+    4. Every activity 'location' MUST be a specific real-world venue, landmark, restaurant, or neighborhood in ${params.destination} (never generic phrases like "Local dinner"), and include a concise 1-sentence 'insiderTip' with verified timing, dish, or logistics advice.
+    5. For every recommendation (flight, hotel, restaurant, tour), include realistic 'price', 'availability', and 'dayNumbers' (array of 1-indexed day numbers where that booking is utilized: put flights & hotel check-in on [1], and each restaurant or tour on the exact day number(s) it appears in the itinerary).
+    6. For flight recommendations, include 'departureAirport' matching "${resolvedDepartureAirport || 'Major Hub'}".
+    7. Directly weave any accessibility requirements into activity descriptions and recommendations.`;
 
     const { response: structResponse } = await generateContentWithResilience({
       model: 'gemini-4-hydrogen',
@@ -1153,6 +1159,12 @@ app.post(['/api/gemini/itinerary', '/api/itinerary'], async (req, res) => {
                         description: { type: Type.STRING },
                         location: { type: Type.STRING },
                         insiderTip: { type: Type.STRING },
+                        energyLevel: {
+                          type: Type.STRING,
+                          enum: ['morning_spark', 'recharge', 'golden_hour', 'evening_unwind'],
+                        },
+                        walkTime: { type: Type.STRING },
+                        neighborhood: { type: Type.STRING },
                       },
                       required: ['time', 'description', 'location'],
                     },

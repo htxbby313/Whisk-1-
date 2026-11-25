@@ -56,7 +56,10 @@ import {
   Shuffle,
   Bookmark,
   Check,
-  LocateFixed
+  LocateFixed,
+  Copy,
+  Printer,
+  Wifi
 } from 'lucide-react';
 import { 
   generateItinerary, 
@@ -956,6 +959,47 @@ const ActionSidebar = ({
           <a href={`https://kayak.com/cars/${destinationQuery}`} target="_blank" rel="noopener noreferrer" className="w-full cyan-gradient text-white p-4 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center justify-between hover:opacity-95 transition-opacity">Rent a Car <ArrowRight className="w-4 h-4" /></a>
         </div>
       </div>
+      <div className="bg-white rounded-[3rem] p-8 md:p-10 shadow-xl border border-slate-200/80 space-y-5">
+        <div className="flex items-center gap-3">
+          <div className="saffron-gradient p-2.5 rounded-xl text-white shadow-sm">
+            <Wifi className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="font-black text-lg text-[var(--whisk-navy)] tracking-tight">Traveler Essentials</h4>
+            <p className="text-xs font-bold text-slate-400">Mobile Data & Airport Lounges</p>
+          </div>
+        </div>
+        <div className="space-y-3">
+          <a
+            href="https://airalo.tp.st/kU2qA8i9"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group block p-4 rounded-2xl bg-slate-50 hover:bg-sky-50 border border-slate-100 hover:border-sky-200 transition-all"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-black uppercase tracking-wider text-[var(--whisk-azure)]">eSIM Mobile Data</span>
+              <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-[var(--whisk-azure)]" />
+            </div>
+            <p className="text-xs text-slate-600 font-medium leading-relaxed">
+              Instant 4G/5G data for {destination.split(',')[0]}. Skip expensive international roaming fees.
+            </p>
+          </a>
+          <a
+            href="https://prioritypass.tp.st/u5mG3P8m"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group block p-4 rounded-2xl bg-slate-50 hover:bg-amber-50 border border-slate-100 hover:border-amber-200 transition-all"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-black uppercase tracking-wider text-amber-700">VIP Airport Lounge</span>
+              <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-700" />
+            </div>
+            <p className="text-xs text-slate-600 font-medium leading-relaxed">
+              Relax before your flight with complimentary food, quiet workstations, and fast Wi-Fi.
+            </p>
+          </a>
+        </div>
+      </div>
     </div>
   );
 };
@@ -1050,6 +1094,7 @@ const BlogPostDisplay = ({
   onOpenPassport: () => void;
   onPlanDestination: (destination: string) => void;
 }) => {
+  const [guideCopied, setGuideCopied] = React.useState(false);
   const contentHtml = React.useMemo(
     () =>
       post.content
@@ -1063,6 +1108,26 @@ const BlogPostDisplay = ({
     [post.content]
   );
   const readMinutes = Math.max(2, Math.ceil(wordCount / 180));
+  const destinationCity = post.destination.split(',')[0].trim();
+  const shareUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/?guide=${post.id || encodeURIComponent(post.destination)}`
+    : 'https://whisk.colemanholdingsllc.com';
+
+  const whatsappText = `✈️ Checking out the ${destinationCity} route guide on Whisk:\n${shareUrl}`;
+  const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(whatsappText)}`;
+  const smsUrl = `sms:?&body=${encodeURIComponent(whatsappText)}`;
+
+  const handleCopyGuide = () => {
+    const cleanSummary = [
+      `✈️ ${post.title}`,
+      `📍 Destination: ${post.destination}`,
+      post.geoSummary ? `\n${post.geoSummary}\n` : '',
+      `Explore & personalize this route on Whisk: ${shareUrl}`
+    ].filter(Boolean).join('\n');
+    navigator.clipboard.writeText(cleanSummary);
+    setGuideCopied(true);
+    setTimeout(() => setGuideCopied(false), 2500);
+  };
 
   return (
     <article className="max-w-7xl mx-auto px-6 sm:px-10 py-14 animate-in fade-in duration-500">
@@ -1074,7 +1139,7 @@ const BlogPostDisplay = ({
         <div className="lg:col-span-2 bg-white rounded-[3rem] shadow-2xl border-4 border-white overflow-hidden">
           <img src={post.imageUrl} referrerPolicy="no-referrer" className="w-full h-[380px] object-cover" alt={post.title} />
           <div className="p-8 sm:p-14">
-            <div className="mb-8">
+            <div className="mb-6">
               <div className="flex flex-wrap items-center gap-2 text-[var(--whisk-terracotta)] font-bold text-xs uppercase tracking-wider mb-3">
                 <MapPin className="w-4 h-4 shrink-0" />
                 <span>{post.destination}</span>
@@ -1092,6 +1157,57 @@ const BlogPostDisplay = ({
               <h1 className="text-4xl md:text-5xl font-black whisk-text-ombre tracking-tight leading-tight">
                 {post.title}
               </h1>
+            </div>
+
+            {/* 1-Click Group Handoff Bar */}
+            <div className="flex flex-wrap items-center gap-2.5 py-4 mb-8 border-y border-slate-100 text-xs">
+              <span className="font-black uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1.5">
+                <Share2 className="w-3.5 h-3.5 text-[var(--whisk-azure)]" /> Group Handoff:
+              </span>
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold transition-colors"
+              >
+                <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+              </a>
+              <a
+                href={smsUrl}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 font-bold transition-colors"
+              >
+                <MessageSquare className="w-3.5 h-3.5" /> iMessage / SMS
+              </a>
+              <button
+                type="button"
+                onClick={handleCopyGuide}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold transition-colors cursor-pointer"
+              >
+                {guideCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                {guideCopied ? 'Copied Clean Route!' : 'Copy for Notion / Notes'}
+              </button>
+            </div>
+
+            {/* Make This Route Yours Banner */}
+            <div className="bg-gradient-to-r from-orange-50/90 via-amber-50/80 to-rose-50/90 border-2 border-orange-200/90 rounded-3xl p-6 sm:p-7 mb-8 flex flex-col md:flex-row md:items-center justify-between gap-5 shadow-xs">
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-[var(--whisk-orange)]">
+                  <Sparkles className="w-3.5 h-3.5" /> Make This Route Yours ✨
+                </div>
+                <h3 className="text-xl font-black text-[var(--whisk-navy)] tracking-tight">
+                  Personalize This Route for Your Dates & Pace
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 font-medium max-w-xl leading-relaxed">
+                  Adopt this curated {destinationCity} field guide into a full day-by-day itinerary tailored to your departure airport, travel style, and natural energy curve.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onPlanDestination(post.destination)}
+                className="vibrant-gradient text-white py-3.5 px-6 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:opacity-95 transition-opacity shadow-[var(--shadow-orange)] cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Plane className="w-4 h-4" /> Personalize This Route ✈️
+              </button>
             </div>
 
             <p className="text-lg text-slate-500 font-medium italic mb-8">{post.metaDescription}</p>
@@ -1138,25 +1254,68 @@ const BlogPostDisplay = ({
           </div>
         </div>
 
-        <div className="space-y-10">
+        <div className="space-y-8">
           <div className="sticky top-24 space-y-6">
             <div className="bg-white rounded-[3rem] p-8 sm:p-10 shadow-2xl border-2 border-white space-y-5">
               <div className="vibrant-gradient w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md">
                 <Plane className="w-6 h-6" />
               </div>
               <h3 className="text-2xl font-black text-[var(--whisk-navy)] tracking-tight">
-                Plan Your Custom {post.destination.split(',')[0]} Trip
+                Plan Your Custom {destinationCity} Trip
               </h3>
               <p className="text-sm text-slate-600 leading-relaxed font-medium">
-                Build a private day-by-day itinerary tailored to your departure city, pace, budget, and travel style.
+                Build a private day-by-day itinerary tailored to your departure city, pace, budget, and natural traveler energy curve.
               </p>
               <button
                 type="button"
                 onClick={() => onPlanDestination(post.destination)}
                 className="w-full vibrant-gradient text-white py-4 px-5 rounded-2xl font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:opacity-95 transition-opacity shadow-[var(--shadow-orange)] cursor-pointer"
               >
-                Build {post.destination.split(',')[0]} Trip <ArrowRight className="w-4 h-4" />
+                Personalize {destinationCity} Route <ArrowRight className="w-4 h-4" />
               </button>
+            </div>
+
+            {/* Traveler Essentials / High-Margin Passive Revenue Card */}
+            <div className="bg-white rounded-[3rem] p-8 shadow-xl border-2 border-white space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="cyan-gradient p-2.5 rounded-xl text-white shadow-sm">
+                  <Wifi className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-black text-base text-[var(--whisk-navy)] tracking-tight">Traveler Essentials</h4>
+                  <p className="text-[11px] font-bold text-slate-400">Mobile Data & Airport Lounges</p>
+                </div>
+              </div>
+              <div className="space-y-3 pt-2">
+                <a
+                  href="https://airalo.tp.st/kU2qA8i9"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group block p-3.5 rounded-2xl bg-slate-50 hover:bg-sky-50 border border-slate-100 hover:border-sky-200 transition-all"
+                >
+                  <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-[var(--whisk-azure)] mb-1">
+                    <span>{destinationCity} eSIM Data</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-[var(--whisk-azure)]" />
+                  </div>
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                    Instant 4G/5G mobile connectivity without expensive international roaming fees.
+                  </p>
+                </a>
+                <a
+                  href="https://prioritypass.tp.st/u5mG3P8m"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group block p-3.5 rounded-2xl bg-slate-50 hover:bg-amber-50 border border-slate-100 hover:border-amber-200 transition-all"
+                >
+                  <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-amber-700 mb-1">
+                    <span>VIP Airport Lounges</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-700" />
+                  </div>
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                    Quiet flight departure lounge passes with complimentary refreshments & fast Wi-Fi worldwide.
+                  </p>
+                </a>
+              </div>
             </div>
           </div>
         </div>
@@ -1680,6 +1839,7 @@ const ItineraryDisplay = ({
   onCoordinatesHydrated?: (itineraryId: string, updatedDays: DayPlan[]) => void;
 }) => {
   const [selectedMapDay, setSelectedMapDay] = React.useState<number | 'all'>('all');
+  const [itineraryCopied, setItineraryCopied] = React.useState(false);
   const allSources = itinerary.groundingSources || [];
   const mapsSources = allSources.filter((s: GroundingSource) => s.sourceType === 'maps');
   const isUnlocked = Boolean(itinerary.unlocked || hasActiveSubscription);
@@ -1746,6 +1906,64 @@ const ItineraryDisplay = ({
           <p className="text-lg sm:text-xl text-slate-600 font-medium max-w-3xl mx-auto leading-relaxed italic">
             "{itinerary.summary}"
           </p>
+       </div>
+
+       {/* Elegant Group Handoff Bar */}
+       <div className="max-w-4xl mx-auto -mt-6 mb-12 bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-3xl p-4 sm:p-5 shadow-lg flex flex-wrap items-center justify-between gap-4 text-xs">
+         <div className="flex items-center gap-2 font-black uppercase tracking-wider text-[var(--whisk-navy)]">
+           <Share2 className="w-4 h-4 text-[var(--whisk-orange)]" />
+           <span>Group Handoff:</span>
+         </div>
+         <div className="flex flex-wrap items-center gap-2">
+           <a
+             href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+               `✈️ ${itinerary.title}\n📍 Destination: ${itinerary.destination}\n\n"${itinerary.summary}"\n\nPlan with Whisk: https://whisk.colemanholdingsllc.com`
+             )}`}
+             target="_blank"
+             rel="noopener noreferrer"
+             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold transition-colors"
+           >
+             <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+           </a>
+           <a
+             href={`sms:?&body=${encodeURIComponent(
+               `✈️ ${itinerary.title}\n📍 Destination: ${itinerary.destination}\n\n"${itinerary.summary}"\n\nPlan with Whisk: https://whisk.colemanholdingsllc.com`
+             )}`}
+             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 font-bold transition-colors"
+           >
+             <MessageSquare className="w-3.5 h-3.5" /> iMessage / SMS
+           </a>
+           <button
+             type="button"
+             onClick={() => {
+               const cleanSummary = [
+                 `✈️ ${itinerary.title}`,
+                 `📍 Destination: ${itinerary.destination}`,
+                 itinerary.startDate && itinerary.endDate ? `📅 Dates: ${formatTripDateRange(itinerary.startDate, itinerary.endDate)}` : '',
+                 itinerary.summary ? `\n"${itinerary.summary}"\n` : '',
+                 ...itinerary.days.map((d) => 
+                   `Day ${d.dayNumber}: ${d.theme}\n` +
+                   d.activities.map((a) => `• [${a.time}] ${a.location}${a.neighborhood ? ` (${a.neighborhood})` : ''}: ${a.description}${a.walkTime ? ` [🚶 ${a.walkTime}]` : ''}`).join('\n')
+                 ),
+                 `\nCurated by Whisk: https://whisk.colemanholdingsllc.com`
+               ].filter(Boolean).join('\n');
+               navigator.clipboard.writeText(cleanSummary);
+               setItineraryCopied(true);
+               setTimeout(() => setItineraryCopied(false), 2500);
+             }}
+             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold transition-colors cursor-pointer"
+           >
+             {itineraryCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+             {itineraryCopied ? 'Copied Clean Route!' : 'Copy for Notion / Notes'}
+           </button>
+           <button
+             type="button"
+             onClick={() => window.print()}
+             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold transition-colors cursor-pointer"
+           >
+             <Printer className="w-3.5 h-3.5" /> Print / PDF
+           </button>
+         </div>
        </div>
 
        <div className="grid lg:grid-cols-3 gap-10">
@@ -1825,10 +2043,42 @@ const ItineraryDisplay = ({
                               </div>
                               <div className="flex-1 min-w-0 space-y-2">
                                  <div className="flex items-start justify-between gap-3">
-                                    <div>
-                                      <span className="text-xs font-bold text-[var(--whisk-azure)] uppercase tracking-wider">
-                                        {activity.time}
-                                      </span>
+                                    <div className="space-y-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-xs font-bold text-[var(--whisk-azure)] uppercase tracking-wider">
+                                          {activity.time}
+                                        </span>
+                                        {activity.energyLevel === 'morning_spark' && (
+                                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200/80">
+                                            <Zap className="w-3 h-3 text-amber-500" /> Morning Spark
+                                          </span>
+                                        )}
+                                        {activity.energyLevel === 'recharge' && (
+                                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                                            <Coffee className="w-3 h-3 text-emerald-600" /> Midday Recharge
+                                          </span>
+                                        )}
+                                        {activity.energyLevel === 'golden_hour' && (
+                                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-50 text-orange-700 border border-orange-200/80">
+                                            <Sun className="w-3 h-3 text-orange-500" /> Golden Hour
+                                          </span>
+                                        )}
+                                        {activity.energyLevel === 'evening_unwind' && (
+                                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200/80">
+                                            <Wine className="w-3 h-3 text-purple-500" /> Evening Unwind
+                                          </span>
+                                        )}
+                                        {activity.walkTime && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-600">
+                                            🚶 {activity.walkTime}
+                                          </span>
+                                        )}
+                                        {activity.neighborhood && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700">
+                                            📍 {activity.neighborhood}
+                                          </span>
+                                        )}
+                                      </div>
                                       <h4 className="text-xl font-black text-[var(--whisk-navy)] tracking-tight">
                                         {activity.location}
                                       </h4>
@@ -2093,15 +2343,17 @@ const TripPlannerForm = ({
   onGenerate,
   loading,
   savedSpotCount = 0,
+  initialDestination = '',
 }: {
   onGenerate: (params: SearchParams) => void;
   loading: boolean;
   savedSpotCount?: number;
+  initialDestination?: string;
 }) => {
   const todayIso = React.useMemo(() => toLocalIsoDate(new Date()), []);
 
   const [params, setParams] = React.useState<SearchParams>({ 
-    destination: '', 
+    destination: initialDestination || '', 
     startDate: undefined,
     endDate: undefined,
     duration: '3 days', 
@@ -2113,6 +2365,12 @@ const TripPlannerForm = ({
     departureAirport: '',
     publishPublicGuide: true,
   });
+
+  React.useEffect(() => {
+    if (initialDestination) {
+      setParams((prev) => ({ ...prev, destination: initialDestination }));
+    }
+  }, [initialDestination]);
   const [locatingAirport, setLocatingAirport] = React.useState(false);
   const [airportNote, setAirportNote] = React.useState<string | null>(null);
 
@@ -2288,16 +2546,27 @@ const TripPlannerForm = ({
                 </div>
               </div>
               <div className="space-y-3">
-                <label className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 ml-4">Energy Level</label>
+                <div className="flex items-center justify-between ml-4">
+                  <label className="text-xs font-black uppercase tracking-[0.25em] text-slate-400">Energy Level & Pacing</label>
+                  <span className="text-[11px] font-bold text-[var(--whisk-orange)]">⚡ Energy Curve Active</span>
+                </div>
                 <div className="relative group">
                   <Zap className="absolute left-6 top-1/2 -translate-y-1/2 text-[var(--whisk-orange)] w-6 h-6" />
                   <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-3xl py-5 pl-16 pr-6 outline-none focus:border-[var(--whisk-orange)] focus:bg-white transition-all text-lg font-bold text-[var(--whisk-navy)] appearance-none cursor-pointer" value={params.pace} onChange={e => setParams({...params, pace: e.target.value as any})}>
-                    <option value="Relaxed">Chill Vibes</option>
-                    <option value="Moderate">A Bit of Everything</option>
-                    <option value="Fast-paced">Let's Go Everywhere</option>
+                    <option value="Relaxed">Chill Vibes (Gentle Curve & Extended Recharge)</option>
+                    <option value="Moderate">A Bit of Everything (Balanced Energy Curve)</option>
+                    <option value="Fast-paced">Let's Go Everywhere (High Spark & Packed Days)</option>
                   </select>
                 </div>
               </div>
+            </div>
+
+            {/* Concierge Energy Curve Info Banner */}
+            <div className="bg-slate-50 border border-slate-200/70 rounded-2xl p-4 flex items-start gap-3 text-xs text-slate-600 font-medium">
+              <Sparkles className="w-4 h-4 text-[var(--whisk-orange)] shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                <strong>Human Energy Curve:</strong> Whisk balances natural traveler stamina—high-energy culture in the morning, a dedicated midday recharge window at quiet local spots, golden hour vistas, and relaxed unhurried dining. Sequential stops are clustered within 10–15 min walkable micro-buffers to prevent transit fatigue.
+              </p>
             </div>
 
             <div className="space-y-4">
@@ -2433,6 +2702,7 @@ export default function App() {
   const [singleTripUnlockedCredit, setSingleTripUnlockedCredit] = React.useState(false);
   const [bannerError, setBannerError] = React.useState<string | null>(null);
   const [mapsQuotaExceeded, setMapsQuotaExceeded] = React.useState(false);
+  const [plannerPrefillDestination, setPlannerPrefillDestination] = React.useState<string>('');
   const [activeLegalDocId, setActiveLegalDocId] = React.useState<LegalDocId | null>(() => {
     if (typeof window === 'undefined') return null;
     const pathMatch = window.location.pathname.match(/^\/legal\/([a-z-]+)\/?$/i);
@@ -2476,7 +2746,10 @@ export default function App() {
     setIsProfileGateOpen(true);
   }, [clearAuthError]);
 
-  const handleStartPlanning = () => {
+  const handleStartPlanning = (prefillDestination?: string) => {
+    if (typeof prefillDestination === 'string') {
+      setPlannerPrefillDestination(prefillDestination);
+    }
     if (!user) {
       setPendingPlannerAfterAuth(true);
       openAuthModal();
@@ -3032,9 +3305,9 @@ export default function App() {
                savedPlaceNames={savedPlaceNames}
                onSavePlace={handleSaveOrTogglePlace}
                onOpenPassport={handleUnlock}
-               onPlanDestination={() => {
+               onPlanDestination={(dest) => {
                  handleCloseGuide();
-                 handleStartPlanning();
+                 handleStartPlanning(dest || viewingData.post.destination);
                }}
              />
            </div>
@@ -3143,6 +3416,7 @@ export default function App() {
           onGenerate={handleGenerate}
           loading={loading}
           savedSpotCount={totalRememberedSpots}
+          initialDestination={plannerPrefillDestination}
         />
       )}
 
