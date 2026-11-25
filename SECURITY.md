@@ -14,7 +14,7 @@ Whisk operates on a continuous deployment model. Security patches and updates ar
 
 | Version / Environment | Supported | Notes |
 | --------------------- | --------- | ----- |
-| **Production (`whisk.colemanholdingsllc.com`)** | :white_check_mark: | Currently active release |
+| **Production (`whisk.travel` / `whisk.colemanholdingsllc.com`)** | :white_check_mark: | Currently active release |
 | **`master` / `main` branch** | :white_check_mark: | Actively maintained repository branches |
 | Legacy / Archived branches | :x: | Not actively maintained |
 

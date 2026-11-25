@@ -1138,7 +1138,7 @@ const BlogPostDisplay = ({
   const destinationCity = post.destination.split(',')[0].trim();
   const shareUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/?guide=${post.id || encodeURIComponent(post.destination)}`
-    : 'https://whisk.colemanholdingsllc.com';
+    : 'https://whisk.travel';
 
   const whatsappText = `✈️ Checking out the ${destinationCity} route guide on Whisk:\n${shareUrl}`;
   const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(whatsappText)}`;
@@ -1954,7 +1954,7 @@ const ItineraryDisplay = ({
          <div className="flex flex-wrap items-center gap-2">
            <a
              href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
-               `✈️ ${itinerary.title}\n📍 Destination: ${itinerary.destination}\n\n"${itinerary.summary}"\n\nPlan with Whisk: https://whisk.colemanholdingsllc.com`
+               `✈️ ${itinerary.title}\n📍 Destination: ${itinerary.destination}\n\n"${itinerary.summary}"\n\nPlan with Whisk: https://whisk.travel`
              )}`}
              target="_blank"
              rel="noopener noreferrer"
@@ -1964,7 +1964,7 @@ const ItineraryDisplay = ({
            </a>
            <a
              href={`sms:?&body=${encodeURIComponent(
-               `✈️ ${itinerary.title}\n📍 Destination: ${itinerary.destination}\n\n"${itinerary.summary}"\n\nPlan with Whisk: https://whisk.colemanholdingsllc.com`
+               `✈️ ${itinerary.title}\n📍 Destination: ${itinerary.destination}\n\n"${itinerary.summary}"\n\nPlan with Whisk: https://whisk.travel`
              )}`}
              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 font-bold transition-colors"
            >
@@ -1982,7 +1982,7 @@ const ItineraryDisplay = ({
                    `Day ${d.dayNumber}: ${d.theme}\n` +
                    d.activities.map((a) => `• [${a.time}] ${a.location}${a.neighborhood ? ` (${a.neighborhood})` : ''}: ${a.description}${a.walkTime ? ` [🚶 ${a.walkTime}]` : ''}`).join('\n')
                  ),
-                 `\nCurated by Whisk: https://whisk.colemanholdingsllc.com`
+                 `\nCurated by Whisk: https://whisk.travel`
                ].filter(Boolean).join('\n');
                navigator.clipboard.writeText(cleanSummary);
                setItineraryCopied(true);
