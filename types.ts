@@ -27,6 +27,22 @@ export interface Activity {
   };
 }
 
+export interface AnchorNearbySpot {
+  id: string;
+  name: string;
+  category: 'cafe' | 'hidden_spot';
+  typeLabel: string;
+  formattedAddress: string;
+  latitude: number;
+  longitude: number;
+  distanceMeters: number;
+  walkMinutes: number;
+  rating?: number;
+  userRatingCount?: number;
+  editorialSummary?: string;
+  mapsUri: string;
+}
+
 export interface DayPlan {
   dayNumber: number;
   date?: string;

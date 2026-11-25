@@ -59,12 +59,12 @@ export const TravelShowcaseSection: React.FC = () => {
   const formattedTotal = String(totalSlides).padStart(2, '0');
 
   return (
-    <section aria-label="Curated destinations and local travel notes" className="py-16 md:py-20 relative">
-      <div className="max-w-7xl mx-auto px-6 sm:px-10">
-        <div className="flex flex-col gap-5">
+    <section aria-label="Curated destinations and local travel notes" className="py-10 sm:py-14 md:py-20 relative">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
+        <div className="flex flex-col gap-4 sm:gap-5">
           {/* Dominant widescreen slideshow stage (~80% visual presence) */}
           <div
-            className="relative w-full aspect-[16/10] sm:aspect-[16/9] lg:aspect-auto lg:h-[520px] xl:h-[560px] rounded-[2rem] overflow-hidden border border-slate-200/90 shadow-xl bg-slate-900 select-none"
+            className="relative w-full aspect-[4/3] sm:aspect-[16/9] lg:aspect-auto lg:h-[520px] xl:h-[560px] rounded-3xl sm:rounded-[2rem] overflow-hidden border border-slate-200/90 shadow-xl bg-slate-900 select-none"
             onMouseEnter={() => setIsPaused(true)}
             onMouseLeave={() => setIsPaused(false)}
             onFocusCapture={() => setIsPaused(true)}
@@ -106,12 +106,12 @@ export const TravelShowcaseSection: React.FC = () => {
               aria-hidden="true"
             />
 
-            <div className="absolute inset-x-0 bottom-0 p-5 sm:p-7 md:p-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div className="absolute inset-x-0 bottom-0 p-4 sm:p-7 md:p-8 flex flex-col sm:flex-row sm:items-end justify-between gap-3 sm:gap-4">
               <div className="min-w-0 text-white">
-                <p className="text-xs font-medium text-white/80 tracking-wide">
+                <p className="text-[11px] sm:text-xs font-medium text-white/80 tracking-wide truncate">
                   Destination Spotlight <span aria-hidden="true">·</span> {activeSlide.region}
                 </p>
-                <p className="text-2xl sm:text-3xl font-extrabold tracking-tight leading-tight mt-1 truncate">
+                <p className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight leading-tight mt-0.5 sm:mt-1 truncate">
                   {activeSlide.name}
                 </p>
               </div>

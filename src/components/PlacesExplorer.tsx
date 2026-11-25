@@ -104,23 +104,23 @@ export const PlacesExplorer: React.FC<PlacesExplorerProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-[3rem] p-8 md:p-12 shadow-xl border-4 border-white space-y-6">
+    <div className="bg-white rounded-3xl sm:rounded-[2.5rem] lg:rounded-[3rem] p-5 sm:p-8 lg:p-12 shadow-xl border-2 sm:border-4 border-white space-y-5 sm:space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-2 bg-orange-50 text-[var(--whisk-orange)] px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest mb-2">
+          <div className="inline-flex items-center gap-2 text-[var(--whisk-orange)] text-[11px] font-black uppercase tracking-widest mb-1.5 sm:mb-2">
             <MapPin className="w-3.5 h-3.5" /> Free Spot Finder
           </div>
-          <h3 className="text-2xl md:text-3xl font-black text-[var(--whisk-navy)] tracking-tight">
+          <h3 className="text-xl sm:text-2xl md:text-3xl font-black text-[var(--whisk-navy)] tracking-tight">
             Find Verified Real-World Spots
           </h3>
-          <p className="text-xs font-medium text-slate-500 mt-1">
+          <p className="text-xs sm:text-sm font-medium text-slate-500 mt-1">
             Free on the homepage — Whisk saves spots you explore here to personalize your future trips.
           </p>
         </div>
         <button
           type="button"
           onClick={handleLocate}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
+          className={`self-start md:self-auto px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
             usingGps
               ? 'bg-emerald-500 text-white shadow-md'
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -131,25 +131,25 @@ export const PlacesExplorer: React.FC<PlacesExplorerProps> = ({
         </button>
       </div>
 
-      <form onSubmit={handleSearch} className="grid sm:grid-cols-5 gap-3">
+      <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-5 gap-3">
         <input
           type="text"
           placeholder="City or area (e.g., Kyoto)"
           value={destination}
           onChange={(e) => setDestination(e.target.value)}
-          className="sm:col-span-2 bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3.5 text-sm font-bold text-[var(--whisk-navy)] outline-none focus:border-[var(--whisk-cyan)]"
+          className="md:col-span-2 bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3.5 text-sm font-bold text-[var(--whisk-navy)] outline-none focus:border-[var(--whisk-cyan)]"
         />
         <input
           type="text"
           placeholder="Ask Google Maps (e.g., cozy ramen or step-free museums)"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="sm:col-span-2 bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3.5 text-sm font-medium text-[var(--whisk-navy)] outline-none focus:border-[var(--whisk-cyan)]"
+          className="md:col-span-2 bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3.5 text-sm font-medium text-[var(--whisk-navy)] outline-none focus:border-[var(--whisk-cyan)]"
         />
         <button
           type="submit"
           disabled={loading || (!query.trim() && !destination.trim())}
-          className="vibrant-gradient text-white rounded-2xl px-5 py-3.5 font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:scale-102 transition-all disabled:opacity-50 cursor-pointer"
+          className="vibrant-gradient text-white rounded-2xl px-5 py-3.5 font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:opacity-95 transition-all disabled:opacity-50 cursor-pointer whitespace-nowrap"
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
           Explore

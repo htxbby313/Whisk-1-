@@ -1240,6 +1240,355 @@ app.post('/api/maps/geocode-itinerary', async (req, res) => {
   }
 });
 
+// Server-side proxy for Places API (New) Nearby Search strictly within a walkable anchor radius (avoids CORS CF1)
+app.post('/api/maps/anchor-nearby', async (req, res) => {
+  try {
+    const rawLat = Number(req.body?.latitude);
+    const rawLng = Number(req.body?.longitude);
+    const rawRadius = Number(req.body?.radiusMeters ?? 800);
+    const anchorName = typeof req.body?.anchorName === 'string' ? req.body.anchorName.trim().toLowerCase() : '';
+
+    if (
+      !Number.isFinite(rawLat) ||
+      !Number.isFinite(rawLng) ||
+      rawLat < -90 ||
+      rawLat > 90 ||
+      rawLng < -180 ||
+      rawLng > 180
+    ) {
+      return res.status(400).json({ error: 'Valid latitude and longitude are required' });
+    }
+
+    const radiusMeters = Math.min(1500, Math.max(300, Math.round(Number.isFinite(rawRadius) ? rawRadius : 800)));
+    const apiKey = getMapsApiKey();
+    if (!apiKey) {
+      return res.status(503).json({ error: 'Google Maps API key not configured' });
+    }
+
+    const fieldMask = [
+      'places.id',
+      'places.displayName',
+      'places.formattedAddress',
+      'places.shortFormattedAddress',
+      'places.location',
+      'places.rating',
+      'places.userRatingCount',
+      'places.primaryType',
+      'places.primaryTypeDisplayName',
+      'places.types',
+      'places.editorialSummary',
+      'places.googleMapsUri',
+    ].join(',');
+
+    const runNearbyQuery = async (includedTypes: string[], maxResultCount: number) => {
+      const response = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': apiKey,
+          'X-Goog-FieldMask': fieldMask,
+          'X-Goog-Maps-Solution-ID': 'gmp_mcp_codeassist_v1_aistudio',
+        },
+        body: JSON.stringify({
+          includedTypes,
+          maxResultCount,
+          rankPreference: 'POPULARITY',
+          languageCode: 'en',
+          locationRestriction: {
+            circle: {
+              center: {
+                latitude: rawLat,
+                longitude: rawLng,
+              },
+              radius: radiusMeters,
+            },
+          },
+        }),
+      });
+
+      if (response.status === 429) {
+        throw new MapsQuotaError('RESOURCE_EXHAUSTED');
+      }
+
+      const payload: any = await response.json().catch(() => ({}));
+      if (payload?.error?.status === 'RESOURCE_EXHAUSTED') {
+        throw new MapsQuotaError('RESOURCE_EXHAUSTED');
+      }
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || `Places Nearby Search failed (${response.status})`);
+      }
+
+      return Array.isArray(payload?.places) ? payload.places : [];
+    };
+
+    const cafeTypes = ['cafe', 'coffee_shop', 'bakery', 'tea_house'];
+    const hiddenSpotTypes = ['art_gallery', 'book_store', 'historical_landmark', 'museum', 'park', 'plaza'];
+
+    const [cafeResult, hiddenResult] = await Promise.allSettled([
+      runNearbyQuery(cafeTypes, 10),
+      runNearbyQuery(hiddenSpotTypes, 10),
+    ]);
+
+    if (
+      (cafeResult.status === 'rejected' && cafeResult.reason instanceof MapsQuotaError) ||
+      (hiddenResult.status === 'rejected' && hiddenResult.reason instanceof MapsQuotaError)
+    ) {
+      return res.status(429).json({
+        error: 'RESOURCE_EXHAUSTED',
+        quotaExceeded: true,
+        places: [],
+      });
+    }
+
+    const rawCafes = cafeResult.status === 'fulfilled' ? cafeResult.value : [];
+    const rawHidden = hiddenResult.status === 'fulfilled' ? hiddenResult.value : [];
+
+    const placesApiUnavailable =
+      cafeResult.status === 'rejected' && hiddenResult.status === 'rejected';
+
+    const cafeTypeSet = new Set(cafeTypes);
+    const dedup = new globalThis.Map<string, any>();
+
+    const ingestPlaces = (list: any[], preferredCategory: 'cafe' | 'hidden_spot') => {
+      for (const place of list) {
+        const placeId = typeof place?.id === 'string' ? place.id : '';
+        const name = place?.displayName?.text?.trim() || '';
+        const pLat = place?.location?.latitude;
+        const pLng = place?.location?.longitude;
+        if (!placeId || !name || typeof pLat !== 'number' || typeof pLng !== 'number') continue;
+
+        const distanceMeters = Math.round(haversineKm(rawLat, rawLng, pLat, pLng) * 1000);
+        // Strictly enforce boundary so every highlighted spot is genuinely inside the stroll circle
+        if (distanceMeters > radiusMeters) continue;
+        // Skip the anchor location itself if it overlaps within 15m and matches the name
+        if (distanceMeters < 15 && anchorName && name.toLowerCase().includes(anchorName)) continue;
+
+        const primaryType = typeof place?.primaryType === 'string' ? place.primaryType : '';
+        const types: string[] = Array.isArray(place?.types) ? place.types : [];
+        const isCafe =
+          preferredCategory === 'cafe' ||
+          cafeTypeSet.has(primaryType) ||
+          types.some((t) => cafeTypeSet.has(t));
+
+        const category: 'cafe' | 'hidden_spot' = isCafe ? 'cafe' : 'hidden_spot';
+        const walkMinutes = Math.max(1, Math.round(distanceMeters / 80));
+        const typeLabel =
+          place?.primaryTypeDisplayName?.text ||
+          (primaryType
+            ? primaryType
+                .split('_')
+                .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+                .join(' ')
+            : category === 'cafe'
+            ? 'Cafe'
+            : 'Hidden Spot');
+
+        const formattedAddress =
+          place?.shortFormattedAddress ||
+          place?.formattedAddress ||
+          `${pLat.toFixed(4)}, ${pLng.toFixed(4)}`;
+
+        const mapsUri =
+          typeof place?.googleMapsUri === 'string' && place.googleMapsUri
+            ? place.googleMapsUri
+            : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                name
+              )}&query_place_id=${encodeURIComponent(placeId)}`;
+
+        const existing = dedup.get(placeId);
+        if (!existing || (existing.category !== 'cafe' && category === 'cafe')) {
+          dedup.set(placeId, {
+            id: placeId,
+            name,
+            category,
+            typeLabel,
+            formattedAddress,
+            latitude: pLat,
+            longitude: pLng,
+            distanceMeters,
+            walkMinutes,
+            rating: typeof place?.rating === 'number' ? place.rating : undefined,
+            userRatingCount:
+              typeof place?.userRatingCount === 'number' ? place.userRatingCount : undefined,
+            editorialSummary:
+              typeof place?.editorialSummary?.text === 'string'
+                ? place.editorialSummary.text
+                : undefined,
+            mapsUri,
+          });
+        }
+      }
+    };
+
+    ingestPlaces(rawCafes, 'cafe');
+    ingestPlaces(rawHidden, 'hidden_spot');
+
+    // Grounding with Google Maps in Gemini API fallback when server-side Places REST key is HTTP-referrer restricted
+    if (dedup.size === 0 && (placesApiUnavailable || rawCafes.length + rawHidden.length === 0)) {
+      const anchorDisplay =
+        typeof req.body?.anchorName === 'string' && req.body.anchorName.trim()
+          ? req.body.anchorName.trim()
+          : `${rawLat.toFixed(5)}, ${rawLng.toFixed(5)}`;
+      const destinationDisplay =
+        typeof req.body?.destination === 'string' && req.body.destination.trim()
+          ? req.body.destination.trim()
+          : 'this area';
+      const walkMinsTarget = Math.round(radiusMeters / 80);
+
+      const groundingPrompt = `Using Google Maps grounding around coordinates (${rawLat.toFixed(
+        6
+      )}, ${rawLng.toFixed(
+        6
+      )}) near "${anchorDisplay}" in ${destinationDisplay}, find 5 curated independent cafes/coffee shops/bakeries AND 5 hidden local spots (bookstores, galleries, quiet parks, shrines, plazas, tucked-away cultural gems) located STRICTLY within ${radiusMeters} meters (a ${walkMinsTarget}-minute stroll) of (${rawLat.toFixed(
+        6
+      )}, ${rawLng.toFixed(6)}).
+
+Return ONLY a valid JSON object (no markdown fences) with this exact shape:
+{
+  "places": [
+    {
+      "name": "Exact Google Maps place name",
+      "category": "cafe" | "hidden_spot",
+      "typeLabel": "Coffee Shop" | "Artisan Bakery" | "Independent Bookstore" | "Hidden Courtyard" | "Gallery" | etc.,
+      "formattedAddress": "Real street address",
+      "latitude": 35.6595,
+      "longitude": 139.7004,
+      "rating": 4.6,
+      "editorialSummary": "1 concise sentence on why locals love this walkable spot"
+    }
+  ]
+}
+Every latitude and longitude MUST be the real Google Maps coordinate strictly within ${radiusMeters} meters of (${rawLat.toFixed(
+        6
+      )}, ${rawLng.toFixed(6)}).`;
+
+      try {
+        const { response } = await generateContentWithResilience({
+          model: 'gemini-4-hydrogen',
+          contents: groundingPrompt,
+          config: {
+            tools: [{ googleMaps: {} }],
+            toolConfig: {
+              retrievalConfig: {
+                latLng: {
+                  latitude: rawLat,
+                  longitude: rawLng,
+                },
+              },
+            },
+            systemInstruction:
+              'Return strictly valid JSON with real physical places grounded via Google Maps near the exact requested coordinates.',
+          },
+          allowLiteFallback: true,
+          allowUngroundedFallbackOn429: false,
+        });
+
+        const groundedSources = extractGroundingSources(response).filter(
+          (s) => s.sourceType === 'maps'
+        );
+        const parsed = parseModelJson<{ places?: any[] }>(response.text, { places: [] });
+        const candidateList = Array.isArray(parsed?.places) ? parsed.places : [];
+
+        for (let i = 0; i < candidateList.length; i++) {
+          const item = candidateList[i];
+          const name = typeof item?.name === 'string' ? item.name.trim() : '';
+          const pLat = Number(item?.latitude);
+          const pLng = Number(item?.longitude);
+          if (!name || !Number.isFinite(pLat) || !Number.isFinite(pLng)) continue;
+
+          const distanceMeters = Math.round(haversineKm(rawLat, rawLng, pLat, pLng) * 1000);
+          // Strictly enforce walking radius boundary
+          if (distanceMeters > radiusMeters) continue;
+          if (distanceMeters < 15 && anchorName && name.toLowerCase().includes(anchorName)) continue;
+
+          const matchedSource = groundedSources.find(
+            (s) =>
+              s.title.toLowerCase().includes(name.toLowerCase()) ||
+              name.toLowerCase().includes(s.title.toLowerCase())
+          );
+
+          const category: 'cafe' | 'hidden_spot' =
+            item?.category === 'cafe' ? 'cafe' : 'hidden_spot';
+          const id = `gmp-grounded-${i}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
+          dedup.set(id, {
+            id,
+            name,
+            category,
+            typeLabel:
+              typeof item?.typeLabel === 'string' && item.typeLabel.trim()
+                ? item.typeLabel.trim()
+                : category === 'cafe'
+                ? 'Cafe'
+                : 'Hidden Spot',
+            formattedAddress:
+              typeof item?.formattedAddress === 'string' && item.formattedAddress.trim()
+                ? item.formattedAddress.trim()
+                : `${name}, ${destinationDisplay}`,
+            latitude: pLat,
+            longitude: pLng,
+            distanceMeters,
+            walkMinutes: Math.max(1, Math.round(distanceMeters / 80)),
+            rating:
+              typeof item?.rating === 'number' && item.rating >= 1 && item.rating <= 5
+                ? Number(item.rating.toFixed(1))
+                : undefined,
+            editorialSummary:
+              typeof item?.editorialSummary === 'string' && item.editorialSummary.trim()
+                ? item.editorialSummary.trim()
+                : undefined,
+            mapsUri:
+              matchedSource?.uri ||
+              `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                `${name}, ${item?.formattedAddress || destinationDisplay}`
+              )}`,
+          });
+        }
+      } catch (groundingErr: any) {
+        console.warn('Anchor Google Maps grounding fallback failed:', groundingErr?.message);
+        if (placesApiUnavailable) {
+          throw cafeResult.reason || hiddenResult.reason || groundingErr;
+        }
+      }
+    }
+
+    const sortByCuratedScore = (a: any, b: any) => {
+      const scoreA = (a.rating ?? 4.0) * 10 - a.distanceMeters / 250;
+      const scoreB = (b.rating ?? 4.0) * 10 - b.distanceMeters / 250;
+      return scoreB - scoreA;
+    };
+
+    const cafes = Array.from(dedup.values())
+      .filter((p) => p.category === 'cafe')
+      .sort(sortByCuratedScore)
+      .slice(0, 8);
+
+    const hiddenSpots = Array.from(dedup.values())
+      .filter((p) => p.category === 'hidden_spot')
+      .sort(sortByCuratedScore)
+      .slice(0, 8);
+
+    const places = [...cafes, ...hiddenSpots].sort((a, b) => a.distanceMeters - b.distanceMeters);
+
+    res.json({
+      places,
+      radiusMeters,
+      walkMinutes: Math.round(radiusMeters / 80),
+      counts: {
+        total: places.length,
+        cafes: cafes.length,
+        hiddenSpots: hiddenSpots.length,
+      },
+    });
+  } catch (error: any) {
+    if (error instanceof MapsQuotaError) {
+      return res.status(429).json({ error: 'RESOURCE_EXHAUSTED', quotaExceeded: true, places: [] });
+    }
+    console.error('Error fetching nearby anchor spots:', error);
+    res.status(500).json({ error: error.message || 'Failed to find walkable nearby spots', places: [] });
+  }
+});
+
 // Generate Travel Itinerary with fast low-latency Google Search Grounding, nearest airport routing, & day-attached bookings
 app.post(['/api/gemini/itinerary', '/api/itinerary'], async (req, res) => {
   try {
