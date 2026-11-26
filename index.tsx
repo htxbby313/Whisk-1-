@@ -1,6 +1,8 @@
 import * as React from 'react';
 import ReactDOM from 'react-dom/client';
+import { FirebaseCrashlytics } from 'firebase/crashlytics/react';
 import App from './App';
+import { app, crashlyticsOptions } from './src/firebase';
 import { FirebaseProvider } from './src/context/AuthContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 
@@ -25,6 +27,7 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
+    <FirebaseCrashlytics firebaseApp={app} crashlyticsOptions={crashlyticsOptions} />
     <ErrorBoundary>
       <FirebaseProvider>
         <App />

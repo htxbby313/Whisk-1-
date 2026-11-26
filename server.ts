@@ -55,7 +55,7 @@ export const authLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 app.use('/api/auth/', authLimiter);
 
-// Lazy-initialized Gemini client utility on the server with telemetry User-Agent header
+// Lazy-initialized Gemini client utilities on the server with telemetry User-Agent header
 let aiClient: GoogleGenAI | null = null;
 function getAi(): GoogleGenAI {
   if (!aiClient) {
@@ -69,6 +69,24 @@ function getAi(): GoogleGenAI {
     });
   }
   return aiClient;
+}
+
+// Separate v1beta client for Interactions API preview models (e.g. gemini-omni-1.2-flash, gemini-nano-banana-2.1)
+// since @google/genai 3.x defaults to v1.
+let aiV1BetaClient: GoogleGenAI | null = null;
+function getAiV1Beta(): GoogleGenAI {
+  if (!aiV1BetaClient) {
+    aiV1BetaClient = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY || process.env.API_KEY,
+      apiVersion: 'v1beta',
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  }
+  return aiV1BetaClient;
 }
 
 interface GroundingSource {
@@ -2461,7 +2479,7 @@ app.post('/api/marketing/image', apiLimiter, requireAuth, requireAdmin, async (r
       return res.status(400).json({ error: 'A visual prompt is required.' });
     }
 
-    const ai = getAi();
+    const ai = getAiV1Beta();
     let inputPayload: any = prompt;
 
     if (sourceImageDataUrl) {
@@ -2551,10 +2569,10 @@ app.post('/api/marketing/video', apiLimiter, requireAuth, requireAdmin, async (r
       return res.status(400).json({ error: 'A motion prompt is required to generate video.' });
     }
 
-    const ai = getAi();
+    const ai = getAiV1Beta();
     let inputPayload: any = prompt;
 
-    if (sourceImageDataUrl && !previousInteractionId) {
+    if (sourceImageDataUrl) {
       const { base64, mimeType } = stripDataUrlPrefix(sourceImageDataUrl);
       if (!base64) {
         return res.status(400).json({ error: 'Invalid source image for animation.' });
@@ -2611,6 +2629,25 @@ app.post('/api/marketing/video', apiLimiter, requireAuth, requireAdmin, async (r
       return res.status(502).json({
         error: 'Video generation completed without playable output. Please adjust the prompt and try again.',
       });
+    }
+
+    if (!videoData && videoUri) {
+      try {
+        const parsedUri = new URL(videoUri);
+        if (parsedUri.hostname === 'generativelanguage.googleapis.com') {
+          const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
+          const dlRes = await fetch(videoUri, {
+            headers: apiKey ? { 'x-goog-api-key': apiKey } : undefined,
+          });
+          if (dlRes.ok) {
+            const arrBuf = await dlRes.arrayBuffer();
+            videoData = Buffer.from(arrBuf).toString('base64');
+            videoMime = dlRes.headers.get('content-type') || videoMime;
+          }
+        }
+      } catch (dlErr) {
+        console.warn('Could not inline remote video URI:', dlErr);
+      }
     }
 
     res.json({

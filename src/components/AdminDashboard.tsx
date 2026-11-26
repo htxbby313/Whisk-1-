@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   BarChart3,
   BookOpen,
+  Bug,
   Check,
   CheckCircle2,
   Crown,
@@ -26,6 +27,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { sendCrashlyticsTestError } from '../firebase';
 import {
   adminDeleteCommunityGuide,
   adminDeleteUserProfile,
@@ -507,6 +509,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }>({ open: false, guide: null });
   const [savingGuide, setSavingGuide] = React.useState(false);
   const [switchingDemoTier, setSwitchingDemoTier] = React.useState(false);
+  const [sendingTestCrash, setSendingTestCrash] = React.useState(false);
+
+  const handleSendCrashlyticsTest = async () => {
+    setSendingTestCrash(true);
+    setError(null);
+    try {
+      const result = await sendCrashlyticsTestError('admin_dashboard_button');
+      setNotice(`Sent Crashlytics test error: ${result.message}`);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to send Crashlytics test error.');
+    } finally {
+      setSendingTestCrash(false);
+    }
+  };
+
+  const handleTriggerUnhandledTestError = () => {
+    window.setTimeout(() => {
+      throw new Error(`Whisk Crashlytics Web SDK unhandled test error (${new Date().toISOString()})`);
+    }, 0);
+    setNotice('Dispatched unhandled test error to Firebase Crashlytics.');
+  };
 
   const loadAllAdminData = React.useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -1238,6 +1261,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </table>
                       </div>
                     )}
+                  </div>
+
+                  {/* Firebase Crashlytics Web Verification */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <h2 className="text-sm font-bold text-[var(--whisk-navy)] flex items-center gap-2">
+                        <Bug className="w-4 h-4 text-[#D94E34]" />
+                        <span>Firebase Crashlytics (Web)</span>
+                      </h2>
+                      <p className="text-xs text-slate-500">
+                        Send a handled or unhandled test error to verify Crashlytics reporting in the Firebase Console.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        disabled={sendingTestCrash}
+                        onClick={handleSendCrashlyticsTest}
+                        className="h-9 px-3.5 rounded-xl bg-[var(--whisk-navy)] hover:bg-slate-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                      >
+                        {sendingTestCrash ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Bug className="w-3.5 h-3.5" />
+                        )}
+                        <span>Send Test Error</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleTriggerUnhandledTestError}
+                        className="h-9 px-3.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer"
+                      >
+                        Trigger Unhandled Error
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

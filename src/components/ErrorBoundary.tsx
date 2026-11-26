@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { ShieldAlert, RefreshCw } from 'lucide-react';
+import { reportCrashlyticsError } from '../firebase';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -23,6 +24,10 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('Whisk ErrorBoundary caught error:', error, info);
+    reportCrashlyticsError(error, {
+      source: 'react_error_boundary',
+      component_stack: (info.componentStack || '').slice(0, 500),
+    });
   }
 
   render() {

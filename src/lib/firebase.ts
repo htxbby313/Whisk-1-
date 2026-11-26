@@ -3,9 +3,12 @@ export {
   app,
   db,
   auth,
+  crashlytics,
   googleProvider,
   appleProvider,
   OperationType,
   handleFirestoreError,
+  reportCrashlyticsError,
+  sendCrashlyticsTestError,
 } from '../firebase';
 export type { FirestoreErrorInfo } from '../firebase';

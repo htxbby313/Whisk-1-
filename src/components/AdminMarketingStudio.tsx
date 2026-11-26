@@ -2,6 +2,7 @@ import * as React from 'react';
 import {
   AlertCircle,
   Box,
+  Camera,
   Check,
   Copy,
   Download,
@@ -9,21 +10,27 @@ import {
   Film,
   Globe,
   Image as ImageIcon,
+  Layers,
   Loader2,
   MapPin,
   MessageSquare,
+  Play,
   RefreshCw,
   Search,
   Send,
+  Shuffle,
+  SkipForward,
   Sparkles,
   Ticket,
   Upload,
+  Volume2,
   Wand2,
   X,
 } from 'lucide-react';
 import { TripItinerary } from '../../types';
 import { WhiskLogo } from './WhiskLogo';
 import { BoardingPass3DStage } from './BoardingPass3DStage';
+import { LANDMARK_POLAROIDS, PolaroidLandmark } from '../data/destinationMedia';
 import {
   exportWhiskLogoAsset,
   MARKETING_PASS_THEMES,
@@ -31,6 +38,16 @@ import {
   MarketingPassThemeId,
   renderMarketingSocialProofPng,
 } from './BoardingPassSocialProofCanvas';
+import {
+  buildAutoReelPrompts,
+  REEL_CONTENT_FORMATS,
+  ReelContentFormatId,
+} from './marketingReelPresets';
+import {
+  compositeLuxuryBoardingPassReel,
+  compositeSoundscapeBoardingPassReel,
+  renderAnimatedPolaroidReel,
+} from './luxuryReelCompositor';
 import {
   fetchMarketingTrendsAndSpots,
   generateMarketingVideo,
@@ -46,6 +63,23 @@ import {
   MarketingVideoResolution,
   sendMarketingDirectorChat,
 } from '../services/marketingService';
+
+interface GeneratedReelItem {
+  id: string;
+  formatId: ReelContentFormatId;
+  formatTitle: string;
+  destination: string;
+  destCode: string;
+  aspectRatio: MarketingVideoAspect;
+  duration: string;
+  videoUrl: string;
+  rawFootageUrl: string;
+  fileExtension: 'mp4' | 'webm';
+  interactionId: string | null;
+  caption: string;
+  hasStudioOutro: boolean;
+  createdAt: string;
+}
 
 type StudioTab = 'social-pass' | 'stage-3d' | 'image-studio' | 'video-studio' | 'director';
 
@@ -203,6 +237,56 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+function imageUrlToDataUrl(url: string): Promise<string> {
+  if (url.startsWith('data:')) return Promise.resolve(url);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const maxDim = 1600;
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+      const w = Math.max(1, Math.round((img.naturalWidth || 1080) * scale));
+      const h = Math.max(1, Math.round((img.naturalHeight || 1080) * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Unable to initialize canvas for image conversion.'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.92));
+    };
+    img.onerror = () => reject(new Error('Could not convert Polaroid photo for animation.'));
+    img.src = url;
+  });
+}
+
+function pickDestinationPolaroidNames(destination: string, count = 3): string[] {
+  const query = destination.toLowerCase().trim();
+  const primary =
+    LANDMARK_POLAROIDS.find(
+      (p) =>
+        p.name.toLowerCase().includes(query) ||
+        query.includes(p.name.split(',')[0].toLowerCase()) ||
+        p.region.toLowerCase().includes(query)
+    ) || LANDMARK_POLAROIDS[0];
+
+  const picked: string[] = [primary.name];
+  for (const simName of primary.similarTo) {
+    if (picked.length >= count) break;
+    if (LANDMARK_POLAROIDS.some((p) => p.name === simName) && !picked.includes(simName)) {
+      picked.push(simName);
+    }
+  }
+  for (const p of LANDMARK_POLAROIDS) {
+    if (picked.length >= count) break;
+    if (!picked.includes(p.name)) picked.push(p.name);
+  }
+  return picked;
+}
+
 export const AdminMarketingStudio: React.FC<AdminMarketingStudioProps> = ({
   itineraries,
   totalUsers,
@@ -264,19 +348,66 @@ export const AdminMarketingStudio: React.FC<AdminMarketingStudioProps> = ({
   const [generatedImageNote, setGeneratedImageNote] = React.useState<string>('');
   const [generatingImage, setGeneratingImage] = React.useState(false);
 
-  // Video Studio (gemini-omni-1.2-flash) state
-  const [videoMode, setVideoMode] = React.useState<'animate' | 'text'>('animate');
-  const [videoPrompt, setVideoPrompt] = React.useState(
-    'Subtle luxury editorial reveal: warm golden sunlight glides across the Whisk Boarding Pass while soft camera push-in highlights the typography and route map, smooth cinematic motion for Instagram Reels and TikTok'
-  );
+  // Video Studio (gemini-omni-1.2-flash) & Auto-Rotating Luxury Reel Sequencer state
+  const [reelFormatId, setReelFormatId] = React.useState<ReelContentFormatId>('soundscape-pass');
+  const [autoRotateFormat, setAutoRotateFormat] = React.useState<boolean>(true);
+  const [autoRotateSource, setAutoRotateSource] = React.useState<boolean>(false);
+  const [autoAttachBoardingPassOutro, setAutoAttachBoardingPassOutro] = React.useState<boolean>(true);
+  const [showEditorialLowerThird, setShowEditorialLowerThird] = React.useState<boolean>(true);
+  const [videoMode, setVideoMode] = React.useState<'animate' | 'text' | 'polaroids'>('text');
   const [videoAspect, setVideoAspect] = React.useState<MarketingVideoAspect>('9:16');
-  const [videoDuration, setVideoDuration] = React.useState<MarketingVideoDuration>('6s');
-  const [videoResolution, setVideoResolution] = React.useState<MarketingVideoResolution>('720p');
+  const [videoDuration, setVideoDuration] = React.useState<MarketingVideoDuration>('8s');
+  const [videoResolution, setVideoResolution] = React.useState<MarketingVideoResolution>('1080p');
+  const [videoPrompt, setVideoPrompt] = React.useState<string>('');
+  const [reelPromptEditedManually, setReelPromptEditedManually] = React.useState<boolean>(false);
   const [videoSourceImageUrl, setVideoSourceImageUrl] = React.useState<string | null>(null);
   const [generatedVideoUrl, setGeneratedVideoUrl] = React.useState<string | null>(null);
+  const [rawFootageUrl, setRawFootageUrl] = React.useState<string | null>(null);
+  const [generatedFileExt, setGeneratedFileExt] = React.useState<'mp4' | 'webm'>('mp4');
   const [videoInteractionId, setVideoInteractionId] = React.useState<string | null>(null);
   const [videoFollowUpPrompt, setVideoFollowUpPrompt] = React.useState('');
   const [generatingVideo, setGeneratingVideo] = React.useState(false);
+  const [videoProgressLabel, setVideoProgressLabel] = React.useState<string>('');
+  const [reelLibrary, setReelLibrary] = React.useState<GeneratedReelItem[]>([]);
+
+  // Whisk Polaroid Reels Builder state
+  const [selectedPolaroidNames, setSelectedPolaroidNames] = React.useState<string[]>(() =>
+    pickDestinationPolaroidNames(PRESET_CAMPAIGNS[0].destLabel, 3)
+  );
+  const [polaroidBackdrop, setPolaroidBackdrop] = React.useState<'espresso' | 'linen'>('espresso');
+  const [useLatestSoundscapeOnPolaroids, setUseLatestSoundscapeOnPolaroids] =
+    React.useState<boolean>(true);
+
+  const selectedPolaroids = React.useMemo(() => {
+    return selectedPolaroidNames
+      .map((name) => LANDMARK_POLAROIDS.find((p) => p.name === name))
+      .filter((p): p is PolaroidLandmark => Boolean(p));
+  }, [selectedPolaroidNames]);
+
+  // Live auto-built single-take luxury cinema prompt + soundscape + caption synced to active verified spots & format
+  const autoReelBundle = React.useMemo(
+    () => buildAutoReelPrompts(spec, reelFormatId, videoAspect, videoDuration),
+    [spec, reelFormatId, videoAspect, videoDuration]
+  );
+
+  React.useEffect(() => {
+    if (reelPromptEditedManually) return;
+    setVideoPrompt(autoReelBundle.cinematographyPrompt);
+  }, [autoReelBundle, reelPromptEditedManually]);
+
+  React.useEffect(() => {
+    if (reelFormatId === 'polaroid-alive' && !videoSourceImageUrl) {
+      const matchedName = pickDestinationPolaroidNames(spec.destLabel, 1)[0];
+      const matched = LANDMARK_POLAROIDS.find((p) => p.name === matchedName);
+      if (matched) {
+        imageUrlToDataUrl(matched.url)
+          .then((dataUrl) => setVideoSourceImageUrl(dataUrl))
+          .catch(() => {
+            setVideoSourceImageUrl(matched.url);
+          });
+      }
+    }
+  }, [reelFormatId, spec.destLabel, videoSourceImageUrl]);
 
   // Trend & Maps Grounding state (gemini-4-hydrogen)
   const [researchPlatform, setResearchPlatform] = React.useState<MarketingPlatform>('instagram-reel');
@@ -340,9 +471,39 @@ export const AdminMarketingStudio: React.FC<AdminMarketingStudioProps> = ({
     }
   }, [chatTurns]);
 
+  const allCampaignSourceIds = React.useMemo(() => {
+    const presetIds = PRESET_CAMPAIGNS.map((p) => `preset:${p.id}`);
+    const tripIds = itineraries.slice(0, 20).map((t) => t.id);
+    return [...presetIds, ...tripIds];
+  }, [itineraries]);
+
+  const applyReelFormat = React.useCallback(
+    (nextFormatId: ReelContentFormatId) => {
+      const fmt =
+        REEL_CONTENT_FORMATS.find((f) => f.id === nextFormatId) || REEL_CONTENT_FORMATS[0];
+      setReelFormatId(fmt.id);
+      setVideoMode(fmt.recommendedMode);
+      setVideoDuration(fmt.recommendedDuration);
+      setReelPromptEditedManually(false);
+      if (fmt.id === 'polaroid-alive') {
+        const matchedName = pickDestinationPolaroidNames(spec.destLabel, 1)[0];
+        const matched = LANDMARK_POLAROIDS.find((p) => p.name === matchedName);
+        if (matched) {
+          imageUrlToDataUrl(matched.url)
+            .then((dataUrl) => setVideoSourceImageUrl(dataUrl))
+            .catch(() => setVideoSourceImageUrl(matched.url));
+        }
+      } else if (fmt.recommendedMode === 'animate' && passPreviewUrl) {
+        setVideoSourceImageUrl(passPreviewUrl);
+      }
+    },
+    [passPreviewUrl, spec.destLabel]
+  );
+
   // Apply either a real Firestore itinerary or a preset campaign
   const handleSelectCampaignSource = (value: string) => {
     setSelectedSourceId(value);
+    setReelPromptEditedManually(false);
     if (value.startsWith('preset:')) {
       const preset = PRESET_CAMPAIGNS.find((p) => `preset:${p.id}` === value);
       if (!preset) return;
@@ -360,6 +521,7 @@ export const AdminMarketingStudio: React.FC<AdminMarketingStudioProps> = ({
         socialProofQuote: preset.socialProofQuote,
         anchorSpots: preset.anchorSpots,
       }));
+      setSelectedPolaroidNames(pickDestinationPolaroidNames(preset.destLabel, 3));
       setImagePrompt(
         `Editorial 35mm golden hour photography of ${preset.label}, sunlit local architecture, atmospheric depth, luxury travel magazine aesthetic, vertical 9:16 composition`
       );
@@ -405,6 +567,7 @@ export const AdminMarketingStudio: React.FC<AdminMarketingStudioProps> = ({
           ? extractedSpots
           : [{ name: `${destCity} Old Town`, subtitle: 'Day 1 · 10-min walkable zone' }],
     }));
+    setSelectedPolaroidNames(pickDestinationPolaroidNames(destCity, 3));
     setImagePrompt(
       `Editorial 35mm golden hour travel photography of ${trip.destination}, authentic local neighborhood atmosphere, cinematic sunlight, vertical 9:16 frame`
     );
@@ -491,43 +654,310 @@ export const AdminMarketingStudio: React.FC<AdminMarketingStudioProps> = ({
     }
   };
 
-  // Run Omni 1.2 Flash Text-to-Video or Image-to-Video
-  const handleRunVideoStudio = async (isFollowUp = false) => {
-    const activePrompt = isFollowUp ? videoFollowUpPrompt.trim() : videoPrompt.trim();
-    if (!activePrompt) {
-      setError('Enter a video motion prompt first.');
-      return;
+  const handleAdvanceReelRotation = React.useCallback(
+    (silent = false) => {
+      const currentIdx = REEL_CONTENT_FORMATS.findIndex((f) => f.id === reelFormatId);
+      const nextFormat =
+        REEL_CONTENT_FORMATS[(currentIdx + 1) % REEL_CONTENT_FORMATS.length];
+      applyReelFormat(nextFormat.id);
+
+      let rotatedDestNote = '';
+      if (autoRotateSource && allCampaignSourceIds.length > 1) {
+        const srcIdx = allCampaignSourceIds.indexOf(selectedSourceId);
+        const nextSrcId =
+          allCampaignSourceIds[(srcIdx + 1) % allCampaignSourceIds.length];
+        handleSelectCampaignSource(nextSrcId);
+        rotatedDestNote = ' + next destination';
+      }
+
+      if (!silent) {
+        flashNotice(`Rotated to ${nextFormat.title}${rotatedDestNote}.`);
+      }
+    },
+    [
+      reelFormatId,
+      applyReelFormat,
+      autoRotateSource,
+      allCampaignSourceIds,
+      selectedSourceId,
+      flashNotice,
+    ]
+  );
+
+  // Toggle a Whisk Polaroid in/out of the Animated Polaroid Reel stack (1 to 5 slides)
+  const handleTogglePolaroidSelection = (polaroidName: string) => {
+    setSelectedPolaroidNames((prev) => {
+      if (prev.includes(polaroidName)) {
+        if (prev.length <= 1) return prev;
+        return prev.filter((n) => n !== polaroidName);
+      }
+      if (prev.length >= 5) {
+        return [...prev.slice(1), polaroidName];
+      }
+      return [...prev, polaroidName];
+    });
+  };
+
+  // Send any bundled Whisk Polaroid straight into AI Living Polaroid mode (with stereo destination sound)
+  const handleAnimateSinglePolaroidWithAI = async (polaroid: PolaroidLandmark) => {
+    setError(null);
+    try {
+      const dataUrl = await imageUrlToDataUrl(polaroid.url);
+      setReelFormatId('polaroid-alive');
+      setVideoMode('animate');
+      setVideoDuration('6s');
+      setVideoSourceImageUrl(dataUrl);
+      setReelPromptEditedManually(false);
+      setVideoInteractionId(null);
+      flashNotice(`Loaded ${polaroid.name} Polaroid into Living Polaroid AI Animator (with trip sound).`);
+    } catch (err: any) {
+      setError(err?.message || 'Could not load Polaroid photo into animator.');
     }
-    if (!isFollowUp && videoMode === 'animate' && !videoSourceImageUrl) {
-      setError('Upload a photo or click "Use Current Boarding Pass" to animate an image into video.');
+  };
+
+  // Render Instant Animated Whisk Polaroid Stack -> Crisp Boarding Pass Reel (with optional real trip sound bed)
+  const handleRenderPolaroidReel = async () => {
+    const slides =
+      selectedPolaroids.length > 0
+        ? selectedPolaroids
+        : pickDestinationPolaroidNames(spec.destLabel, 3)
+            .map((name) => LANDMARK_POLAROIDS.find((p) => p.name === name))
+            .filter((p): p is PolaroidLandmark => Boolean(p));
+
+    if (slides.length === 0) {
+      setError('Select at least one Whisk Polaroid to animate.');
       return;
     }
 
     setGeneratingVideo(true);
     setError(null);
+    setVideoProgressLabel('Preparing animated Whisk Polaroid stack...');
+
     try {
-      const result = await generateMarketingVideo({
+      const freshPassPng = passPreviewUrl || (await renderMarketingSocialProofPng(spec));
+      const finished = await renderAnimatedPolaroidReel({
+        polaroids: slides.map((p) => ({
+          url: p.url,
+          title: p.name,
+          subtitle: p.region,
+        })),
+        boardingPassDataUrl: freshPassPng,
+        aspectRatio: videoAspect,
+        destinationLabel: spec.destLabel,
+        hookHeadline: spec.viralHook,
+        audioBedVideoUrl: useLatestSoundscapeOnPolaroids ? rawFootageUrl : null,
+        backdropStyle: polaroidBackdrop,
+        onProgress: setVideoProgressLabel,
+      });
+
+      setGeneratedVideoUrl(finished.videoBlobUrl);
+      setGeneratedFileExt(finished.fileExtension);
+
+      const savedItem: GeneratedReelItem = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        formatId: 'polaroid-alive',
+        formatTitle: `Polaroid Stack (${slides.length} prints) → Boarding Pass`,
+        destination: spec.destLabel,
+        destCode: spec.destCode,
+        aspectRatio: videoAspect,
+        duration: `${finished.totalDurationSec}s`,
+        videoUrl: finished.videoBlobUrl,
+        rawFootageUrl: rawFootageUrl || finished.videoBlobUrl,
+        fileExtension: finished.fileExtension,
+        interactionId: null,
+        caption: `${spec.viralHook}\n\n${slides.map((s) => `• ${s.name} — ${s.region}`).join('\n')}\n\nYour walkable route + shareable Boarding Pass at whisk.travel\n\n#whisktravel #polaroidtravel #luxurytravel #${spec.destLabel.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+        hasStudioOutro: true,
+        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setReelLibrary((prev) => [savedItem, ...prev.slice(0, 11)]);
+      flashNotice(
+        `Rendered animated ${slides.length}-Polaroid Reel (${finished.totalDurationSec}s)${
+          useLatestSoundscapeOnPolaroids && rawFootageUrl ? ' with live trip soundscape' : ''
+        }.`
+      );
+    } catch (err: any) {
+      setError(err?.message || 'Could not render animated Polaroid Reel.');
+    } finally {
+      setGeneratingVideo(false);
+      setVideoProgressLabel('');
+    }
+  };
+
+  // Re-composite existing clean cinema footage with updated Boarding Pass copy/theme (zero AI re-render cost)
+  const handleRecompositeOutro = async () => {
+    if (!rawFootageUrl) return;
+    setGeneratingVideo(true);
+    setError(null);
+    try {
+      if (autoReelBundle.format.compositeMode === 'soundscape-pass') {
+        const finished = await compositeSoundscapeBoardingPassReel({
+          ambientVideoUrl: rawFootageUrl,
+          spec,
+          aspectRatio: videoAspect,
+          soundscapeLabel: autoReelBundle.soundscapeSummary,
+          onProgress: setVideoProgressLabel,
+        });
+        setGeneratedVideoUrl(finished.videoBlobUrl);
+        setGeneratedFileExt(finished.fileExtension);
+        flashNotice(
+          `Re-composited Boarding Pass + Live Trip Soundscape (${finished.totalDurationSec}s).`
+        );
+      } else {
+        const freshPassPng = passPreviewUrl || (await renderMarketingSocialProofPng(spec));
+        const finished = await compositeLuxuryBoardingPassReel({
+          footageUrl: rawFootageUrl,
+          boardingPassDataUrl: freshPassPng,
+          aspectRatio: videoAspect,
+          destinationLabel: spec.destLabel,
+          spotTitle: autoReelBundle.featuredSpot.name,
+          spotSubtitle: autoReelBundle.featuredSpot.subtitle,
+          showEditorialCaption: showEditorialLowerThird,
+          onProgress: setVideoProgressLabel,
+        });
+        setGeneratedVideoUrl(finished.videoBlobUrl);
+        setGeneratedFileExt(finished.fileExtension);
+        flashNotice(`Re-composited luxury Boarding Pass finale (${finished.totalDurationSec}s).`);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Could not composite Boarding Pass end-card.');
+    } finally {
+      setGeneratingVideo(false);
+      setVideoProgressLabel('');
+    }
+  };
+
+  // Run Omni 1.2 Flash luxury footage + stereo destination soundscape + crisp Boarding Pass Studio Finisher
+  const handleRunVideoStudio = async (isFollowUp = false) => {
+    const activePrompt = isFollowUp ? videoFollowUpPrompt.trim() : videoPrompt.trim();
+    if (!activePrompt) {
+      setError('Enter a cinematography prompt first.');
+      return;
+    }
+
+    let effectiveSourceImage =
+      videoSourceImageUrl || (videoMode === 'animate' ? passPreviewUrl : null);
+
+    if (!isFollowUp && videoMode === 'animate' && !effectiveSourceImage) {
+      setError('Choose a Whisk Polaroid, Boarding Pass, or upload a photo to animate.');
+      return;
+    }
+
+    const compositeMode = autoReelBundle.format.compositeMode;
+    const isSoundscapePass = compositeMode === 'soundscape-pass' && videoMode === 'text';
+    const attachStudioOutro =
+      !isSoundscapePass && autoAttachBoardingPassOutro && compositeMode === 'cinema-outro';
+
+    setGeneratingVideo(true);
+    setError(null);
+    setVideoProgressLabel(
+      isFollowUp
+        ? 'Refining footage & trip soundscape with Omni 1.2 Flash...'
+        : isSoundscapePass
+        ? `Capturing ${spec.destLabel} bokeh lights + live trip soundscape (${videoDuration})...`
+        : attachStudioOutro
+        ? `Filming clean ${videoResolution} cinema shot of ${autoReelBundle.featuredSpot.name} + ambient audio...`
+        : `Rendering ${videoResolution} clip with Omni 1.2 Flash...`
+    );
+
+    try {
+      if (!isFollowUp && videoMode === 'animate' && effectiveSourceImage) {
+        effectiveSourceImage = await imageUrlToDataUrl(effectiveSourceImage);
+      }
+
+      const rawResult = await generateMarketingVideo({
         prompt: activePrompt,
         aspectRatio: videoAspect,
         duration: videoDuration,
         resolution: videoResolution,
         sourceImageDataUrl:
-          !isFollowUp && videoMode === 'animate' ? videoSourceImageUrl || undefined : undefined,
+          !isFollowUp && videoMode === 'animate' ? effectiveSourceImage || undefined : undefined,
         previousInteractionId: isFollowUp ? videoInteractionId || undefined : undefined,
       });
-      setGeneratedVideoUrl(result.videoDataUrl);
-      setVideoInteractionId(result.interactionId);
+
+      setRawFootageUrl(rawResult.videoDataUrl);
+      setVideoInteractionId(rawResult.interactionId);
       if (isFollowUp) setVideoFollowUpPrompt('');
-      flashNotice(`Generated ${result.aspectRatio} (${result.duration}) Reel video with ${result.model}.`);
+
+      let displayVideoUrl = rawResult.videoDataUrl;
+      let displayExt: 'mp4' | 'webm' = 'mp4';
+      let displayDuration: string = rawResult.duration;
+      let hasOutro = false;
+
+      if (isSoundscapePass) {
+        const finished = await compositeSoundscapeBoardingPassReel({
+          ambientVideoUrl: rawResult.videoDataUrl,
+          spec,
+          aspectRatio: videoAspect,
+          soundscapeLabel: autoReelBundle.soundscapeSummary,
+          onProgress: setVideoProgressLabel,
+        });
+        displayVideoUrl = finished.videoBlobUrl;
+        displayExt = finished.fileExtension;
+        displayDuration = `${finished.totalDurationSec}s`;
+        hasOutro = true;
+      } else if (attachStudioOutro) {
+        const freshPassPng = passPreviewUrl || (await renderMarketingSocialProofPng(spec));
+        const finished = await compositeLuxuryBoardingPassReel({
+          footageUrl: rawResult.videoDataUrl,
+          boardingPassDataUrl: freshPassPng,
+          aspectRatio: videoAspect,
+          destinationLabel: spec.destLabel,
+          spotTitle: autoReelBundle.featuredSpot.name,
+          spotSubtitle: autoReelBundle.featuredSpot.subtitle,
+          showEditorialCaption: showEditorialLowerThird,
+          onProgress: setVideoProgressLabel,
+        });
+        displayVideoUrl = finished.videoBlobUrl;
+        displayExt = finished.fileExtension;
+        displayDuration = `${finished.totalDurationSec}s`;
+        hasOutro = true;
+      }
+
+      setGeneratedVideoUrl(displayVideoUrl);
+      setGeneratedFileExt(displayExt);
+
+      const savedItem: GeneratedReelItem = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        formatId: reelFormatId,
+        formatTitle: autoReelBundle.format.title,
+        destination: spec.destLabel,
+        destCode: spec.destCode,
+        aspectRatio: rawResult.aspectRatio,
+        duration: displayDuration,
+        videoUrl: displayVideoUrl,
+        rawFootageUrl: rawResult.videoDataUrl,
+        fileExtension: displayExt,
+        interactionId: rawResult.interactionId,
+        caption: autoReelBundle.suggestedCaption,
+        hasStudioOutro: hasOutro,
+        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setReelLibrary((prev) => [savedItem, ...prev.slice(0, 11)]);
+
+      if (!isFollowUp && autoRotateFormat) {
+        handleAdvanceReelRotation(true);
+        flashNotice(
+          isSoundscapePass
+            ? `Finished Boarding Pass + Live Trip Soundscape (${displayDuration}) & rotated to next pillar.`
+            : `Luxury Reel finished (${displayDuration}) with crisp Boarding Pass outro & rotated to next pillar.`
+        );
+      } else {
+        flashNotice(
+          isSoundscapePass
+            ? `Finished Boarding Pass + Live Trip Soundscape (${displayDuration}).`
+            : `Finished ${rawResult.aspectRatio} (${displayDuration}) luxury Reel.`
+        );
+      }
     } catch (err: any) {
       setError(err?.message || 'Video generation failed.');
     } finally {
       setGeneratingVideo(false);
+      setVideoProgressLabel('');
     }
   };
 
   // Run Google Search + Google Maps Trend & Spot Research
-  const handleResearchTrendsAndMaps = async () => {
+  const handleResearchTrendsAndMaps = async (autoApplySpots = false) => {
     setResearchingTrends(true);
     setError(null);
     try {
@@ -537,7 +967,27 @@ export const AdminMarketingStudio: React.FC<AdminMarketingStudioProps> = ({
         campaignGoal: researchGoal,
       });
       setTrendBrief(brief);
-      flashNotice(`Grounded campaign brief loaded for ${brief.destination} via Google Search & Maps.`);
+      if (autoApplySpots) {
+        setSpec((prev) => ({
+          ...prev,
+          viralHook: brief.viralHooks?.[0] || prev.viralHook,
+          title: brief.boardingPassHeadline || prev.title,
+          socialProofQuote: brief.socialProofQuote || prev.socialProofQuote,
+          anchorSpots:
+            brief.verifiedSpots?.length > 0
+              ? brief.verifiedSpots.slice(0, 3).map((s) => ({
+                  name: s.name,
+                  subtitle: `${s.neighborhood} · ${s.whyItConverts}`,
+                }))
+              : prev.anchorSpots,
+        }));
+        setReelPromptEditedManually(false);
+        flashNotice(
+          `Loaded ${brief.verifiedSpots?.length || 0} Google Maps verified spots for ${brief.destination} & rebuilt your Reel prompt.`
+        );
+      } else {
+        flashNotice(`Grounded campaign brief loaded for ${brief.destination} via Google Search & Maps.`);
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to research live trends & spots.');
     } finally {
@@ -561,8 +1011,8 @@ export const AdminMarketingStudio: React.FC<AdminMarketingStudioProps> = ({
           : prev.anchorSpots,
     }));
     if (trendBrief.imagePrompt) setImagePrompt(trendBrief.imagePrompt);
-    if (trendBrief.videoPrompt) setVideoPrompt(trendBrief.videoPrompt);
-    flashNotice('Applied verified Google Maps spots, hook, and prompts across the studio.');
+    setReelPromptEditedManually(false);
+    flashNotice('Applied verified Google Maps spots, hook, and rebuilt the Spots → Boarding Pass Reel prompt.');
   };
 
   // Send message to Multi-Turn Gemini Creative Director Chat
@@ -1288,274 +1738,856 @@ export const AdminMarketingStudio: React.FC<AdminMarketingStudioProps> = ({
         </div>
       )}
 
-      {/* TAB 4: VIDEO REELS STUDIO (gemini-omni-1.2-flash TEXT-TO-VIDEO & IMAGE-TO-VIDEO) */}
+      {/* TAB 4: VIDEO REELS STUDIO (AUTO-ROTATING VERIFIED SPOTS -> BOARDING PASS) */}
       {activeTab === 'video-studio' && (
-        <div className="grid lg:grid-cols-[1fr_420px] gap-6 items-start">
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
-              <div>
-                <h3 className="text-sm font-bold text-[var(--whisk-navy)]">
-                  Social Video Reel Generator · gemini-omni-1.2-flash
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Animate your Whisk Boarding Pass or uploaded photo into a 9:16 TikTok/Instagram Reel, or generate fresh video from text.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setVideoMode('animate')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer ${
-                    videoMode === 'animate'
-                      ? 'bg-white text-[var(--whisk-navy)] shadow-2xs'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  Animate Image
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVideoMode('text')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer ${
-                    videoMode === 'text'
-                      ? 'bg-white text-[var(--whisk-navy)] shadow-2xs'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  Text to Video
-                </button>
-              </div>
-            </div>
-
-            {videoMode === 'animate' && (
-              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-slate-700">Starting Frame Image</span>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {passPreviewUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setVideoSourceImageUrl(passPreviewUrl)}
-                        className="h-8 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer"
-                      >
-                        Use Current Boarding Pass
-                      </button>
-                    )}
-                    {generatedImageUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setVideoSourceImageUrl(generatedImageUrl)}
-                        className="h-8 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer"
-                      >
-                        Use Nano Banana Image
-                      </button>
-                    )}
-                    <label className="h-8 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 cursor-pointer">
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Upload Photo</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          setVideoSourceImageUrl(await readFileAsDataUrl(file));
-                        }}
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                {videoSourceImageUrl ? (
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={videoSourceImageUrl}
-                      alt="Starting frame for video animation"
-                      className="w-20 h-28 object-cover rounded-lg border border-slate-200 bg-white"
-                    />
-                    <div className="text-xs text-slate-600 space-y-1">
-                      <div className="font-semibold text-[var(--whisk-navy)]">
-                        Starting frame ready for animation
-                      </div>
-                      <p>Omni 1.2 Flash will animate this frame into a shareable MP4 clip.</p>
-                      <button
-                        type="button"
-                        onClick={() => setVideoSourceImageUrl(null)}
-                        className="text-rose-600 font-semibold hover:underline cursor-pointer"
-                      >
-                        Remove frame
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-xs text-slate-500">
-                    Click “Use Current Boarding Pass” or upload a destination photo to animate it into a vertical Reel.
+        <div className="space-y-6">
+          <div className="grid lg:grid-cols-[1fr_420px] gap-6 items-start">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                <div>
+                  <h3 className="text-sm font-bold text-[var(--whisk-navy)]">
+                    Luxury Reel Studio · Soundscape Pass, Polaroids & Verified Spots
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Produce Boarding Pass + live trip soundscapes, animated Whisk Polaroid Reels, or single-take 35mm spot films.
                   </p>
-                )}
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                {videoMode === 'animate' ? 'Animation & Camera Motion Prompt' : 'Video Scene Prompt'}
-              </label>
-              <textarea
-                rows={4}
-                value={videoPrompt}
-                onChange={(e) => setVideoPrompt(e.target.value)}
-                placeholder="Describe camera movement, lighting transitions, ambient motion, and atmosphere..."
-                className="w-full p-3.5 rounded-xl border border-slate-300 text-sm"
-              />
-            </div>
-
-            <div className="grid sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Aspect Ratio
-                </label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(['9:16', '16:9'] as MarketingVideoAspect[]).map((ar) => (
-                    <button
-                      key={ar}
-                      type="button"
-                      onClick={() => setVideoAspect(ar)}
-                      className={`h-9 rounded-lg border text-xs font-semibold tabular-nums cursor-pointer ${
-                        videoAspect === ar
-                          ? 'bg-[var(--whisk-navy)] text-white border-[var(--whisk-navy)]'
-                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      {ar}
-                    </button>
-                  ))}
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Duration
-                </label>
-                <select
-                  value={videoDuration}
-                  onChange={(e) => setVideoDuration(e.target.value as MarketingVideoDuration)}
-                  className="w-full h-9 px-3 rounded-lg border border-slate-300 bg-white text-xs font-semibold tabular-nums"
-                >
-                  {(['5s', '6s', '8s', '10s', '12s', '15s'] as MarketingVideoDuration[]).map((d) => (
-                    <option key={d} value={d}>
-                      {d} clip
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Resolution
-                </label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(['720p', '1080p'] as MarketingVideoResolution[]).map((resOpt) => (
-                    <button
-                      key={resOpt}
-                      type="button"
-                      onClick={() => setVideoResolution(resOpt)}
-                      className={`h-9 rounded-lg border text-xs font-semibold tabular-nums cursor-pointer ${
-                        videoResolution === resOpt
-                          ? 'bg-[var(--whisk-navy)] text-white border-[var(--whisk-navy)]'
-                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      {resOpt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              disabled={generatingVideo}
-              onClick={() => handleRunVideoStudio(false)}
-              className="h-10 px-5 rounded-xl bg-[#D94E34] hover:bg-[#c54229] text-white text-xs font-semibold inline-flex items-center gap-2 cursor-pointer disabled:opacity-60"
-            >
-              {generatingVideo ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Film className="w-4 h-4" />
-              )}
-              <span>
-                {generatingVideo
-                  ? 'Rendering Video (may take 30–90s)...'
-                  : videoMode === 'animate'
-                  ? `Animate ${videoAspect} Reel`
-                  : `Generate ${videoAspect} Video`}
-              </span>
-            </button>
-
-            {/* Multi-Turn Video Refinement / Extension via previous_interaction_id */}
-            {videoInteractionId && (
-              <div className="pt-4 border-t border-slate-200 space-y-2.5">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Extend or Edit Generated Clip (Multi-Turn Omni Flash)
-                </label>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <input
-                    type="text"
-                    value={videoFollowUpPrompt}
-                    onChange={(e) => setVideoFollowUpPrompt(e.target.value)}
-                    placeholder="e.g. Extend the scene with a slow golden-hour pull-back over the city skyline"
-                    className="flex-1 h-9 px-3 rounded-lg border border-slate-300 text-xs"
-                  />
+                <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
                   <button
                     type="button"
-                    disabled={generatingVideo || !videoFollowUpPrompt.trim()}
-                    onClick={() => handleRunVideoStudio(true)}
-                    className="h-9 px-4 rounded-lg bg-[var(--whisk-navy)] hover:bg-slate-800 text-white text-xs font-semibold whitespace-nowrap cursor-pointer disabled:opacity-50"
+                    onClick={() => setVideoMode('text')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer ${
+                      videoMode === 'text'
+                        ? 'bg-white text-[var(--whisk-navy)] shadow-2xs'
+                        : 'text-slate-600'
+                    }`}
                   >
-                    Refine / Extend
+                    Pass & Soundscape
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVideoMode('polaroids')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 cursor-pointer ${
+                      videoMode === 'polaroids'
+                        ? 'bg-white text-[var(--whisk-navy)] shadow-2xs'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    <Camera className="w-3.5 h-3.5 text-[#D94E34]" />
+                    <span>Polaroid Reels</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVideoMode('animate')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer ${
+                      videoMode === 'animate'
+                        ? 'bg-white text-[var(--whisk-navy)] shadow-2xs'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    Animate Photo
                   </button>
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* Video Preview & Download Panel */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
-            <div className="text-xs font-bold text-[var(--whisk-navy)]">
-              Rendered Reel Output ({videoAspect})
-            </div>
+              {videoMode === 'polaroids' ? (
+                <div className="space-y-5">
+                  <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/75 space-y-3.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-bold text-[var(--whisk-navy)] flex items-center gap-1.5">
+                          <Camera className="w-3.5 h-3.5 text-[#D94E34]" />
+                          <span>Animated Whisk Polaroid Stack → Boarding Pass</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Select 1–5 Whisk Polaroids ({selectedPolaroidNames.length}/5 selected). Each print glides onto an editorial desk with slow Ken Burns motion, then dissolves into your crisp Boarding Pass.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedPolaroidNames(pickDestinationPolaroidNames(spec.destLabel, 3))
+                        }
+                        className="h-8 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-[var(--whisk-navy)] inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-[#D94E34]" />
+                        <span>Match {spec.destLabel}</span>
+                      </button>
+                    </div>
 
-            <div className="w-full min-h-[380px] rounded-xl border border-slate-200 bg-slate-950 flex items-center justify-center overflow-hidden">
-              {generatedVideoUrl ? (
-                <video
-                  src={generatedVideoUrl}
-                  controls
-                  autoPlay
-                  loop
-                  playsInline
-                  className="w-full max-h-[520px] object-contain"
-                />
-              ) : (
-                <div className="text-center px-6 py-12 text-xs text-slate-400">
-                  {generatingVideo
-                    ? 'Rendering video frames with gemini-omni-1.2-flash...'
-                    : 'Your shareable 9:16 TikTok / Instagram Reel or 16:9 promo video will play here.'}
+                    {/* Visual Whisk Polaroid Picker Grid */}
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5 max-h-[300px] overflow-y-auto pr-1">
+                      {LANDMARK_POLAROIDS.map((polaroid) => {
+                        const orderIdx = selectedPolaroidNames.indexOf(polaroid.name);
+                        const isSelected = orderIdx !== -1;
+                        return (
+                          <button
+                            key={polaroid.name}
+                            type="button"
+                            onClick={() => handleTogglePolaroidSelection(polaroid.name)}
+                            className={`group relative rounded-xl p-1.5 pb-2 bg-white border text-left transition-all cursor-pointer ${
+                              isSelected
+                                ? 'border-[#D94E34] ring-2 ring-[#D94E34]/20 shadow-sm'
+                                : 'border-slate-200 hover:border-slate-300'
+                            }`}
+                          >
+                            <div className="relative aspect-[4/4] rounded-lg overflow-hidden bg-slate-100">
+                              <img
+                                src={polaroid.url}
+                                alt={polaroid.name}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                              {isSelected && (
+                                <span className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-[#D94E34] text-white text-[10px] font-bold flex items-center justify-center shadow">
+                                  {orderIdx + 1}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1.5 px-0.5">
+                              <div className="text-[10px] font-bold text-[var(--whisk-navy)] truncate">
+                                {polaroid.name.split(',')[0]}
+                              </div>
+                              <div className="text-[9px] text-slate-500 truncate">
+                                {polaroid.region}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Selected Polaroid Sequence Strip */}
+                    {selectedPolaroids.length > 0 && (
+                      <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600">
+                        <span className="font-semibold text-[var(--whisk-navy)]">Sequence:</span>
+                        {selectedPolaroids.map((p, idx) => (
+                          <React.Fragment key={p.name}>
+                            <span className="font-medium text-slate-800">
+                              {idx + 1}. {p.name.split(',')[0]}
+                            </span>
+                            <span className="text-slate-400">→</span>
+                          </React.Fragment>
+                        ))}
+                        <span className="font-semibold text-[#D94E34]">
+                          Whisk Boarding Pass ({spec.originCode} → {spec.destCode})
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Polaroid Reel Surface, Aspect Ratio & Audio Bed Controls */}
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Editorial Desk Surface
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(
+                          [
+                            { id: 'espresso', label: 'Dark Espresso' },
+                            { id: 'linen', label: 'Warm Linen' },
+                          ] as const
+                        ).map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setPolaroidBackdrop(opt.id)}
+                            className={`h-9 rounded-lg border text-xs font-semibold cursor-pointer ${
+                              polaroidBackdrop === opt.id
+                                ? 'bg-[var(--whisk-navy)] text-white border-[var(--whisk-navy)]'
+                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Aspect Ratio
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(['9:16', '16:9'] as MarketingVideoAspect[]).map((ar) => (
+                          <button
+                            key={ar}
+                            type="button"
+                            onClick={() => setVideoAspect(ar)}
+                            className={`h-9 rounded-lg border text-xs font-semibold tabular-nums cursor-pointer ${
+                              videoAspect === ar
+                                ? 'bg-[var(--whisk-navy)] text-white border-[var(--whisk-navy)]'
+                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            {ar}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+                    <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={useLatestSoundscapeOnPolaroids}
+                        onChange={(e) => setUseLatestSoundscapeOnPolaroids(e.target.checked)}
+                        className="rounded border-slate-300 text-[#D94E34]"
+                      />
+                      <Volume2 className="w-3.5 h-3.5 text-[#D94E34]" />
+                      <span>Layer latest captured trip soundscape underneath Polaroids</span>
+                    </label>
+                    <span className="text-[11px] text-slate-500">
+                      {rawFootageUrl
+                        ? 'Live destination audio bed ready'
+                        : 'Tip: film Pillar #1 first to attach real city & market sounds'}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={generatingVideo || selectedPolaroids.length === 0}
+                      onClick={handleRenderPolaroidReel}
+                      className="h-10 px-5 rounded-xl bg-[#D94E34] hover:bg-[#c54229] text-white text-xs font-semibold inline-flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                    >
+                      {generatingVideo ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Film className="w-4 h-4" />
+                      )}
+                      <span>
+                        {generatingVideo
+                          ? videoProgressLabel || 'Rendering Polaroid Reel...'
+                          : `Render Animated ${selectedPolaroids.length}-Polaroid Reel`}
+                      </span>
+                    </button>
+
+                    {selectedPolaroids[0] && (
+                      <button
+                        type="button"
+                        disabled={generatingVideo}
+                        onClick={() => handleAnimateSinglePolaroidWithAI(selectedPolaroids[0])}
+                        className="h-10 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-[var(--whisk-navy)] inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Wand2 className="w-3.5 h-3.5 text-[#D94E34]" />
+                        <span>
+                          Animate “{selectedPolaroids[0].name.split(',')[0]}” with AI + Sound
+                        </span>
+                      </button>
+                    )}
+                  </div>
                 </div>
+              ) : (
+                <>
+                  {/* Content Format Rotator Bar */}
+                  <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/75 space-y-3.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-bold text-[var(--whisk-navy)] flex items-center gap-1.5">
+                          <Shuffle className="w-3.5 h-3.5 text-[#D94E34]" />
+                          <span>Content Rotation Pillar</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          {autoReelBundle.format.description}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={researchingTrends}
+                          onClick={() => handleResearchTrendsAndMaps(true)}
+                          className="h-8 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-[var(--whisk-navy)] inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                        >
+                          {researchingTrends ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <MapPin className="w-3.5 h-3.5 text-[#D94E34]" />
+                          )}
+                          <span>Refresh Maps Spots</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAdvanceReelRotation(false)}
+                          className="h-8 px-3 rounded-lg bg-[var(--whisk-navy)] hover:bg-slate-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <SkipForward className="w-3.5 h-3.5" />
+                          <span>Next Format</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 7 Selectable Content Pillars */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                      {REEL_CONTENT_FORMATS.map((fmt) => {
+                        const active = reelFormatId === fmt.id;
+                        return (
+                          <button
+                            key={fmt.id}
+                            type="button"
+                            onClick={() => applyReelFormat(fmt.id)}
+                            className={`px-3 py-2 rounded-lg border text-left text-xs font-semibold transition-colors cursor-pointer ${
+                              active
+                                ? 'bg-[var(--whisk-navy)] text-white border-[var(--whisk-navy)]'
+                                : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="truncate">{fmt.shortLabel}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Active Live Trip Soundscape + Editorial Cut Strip */}
+                    <div className="pt-2 border-t border-slate-200/80 space-y-1.5 text-[11px] text-slate-600">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="font-semibold text-[var(--whisk-navy)] inline-flex items-center gap-1">
+                          <Volume2 className="w-3.5 h-3.5 text-[#D94E34]" />
+                          <span>Live Trip Soundscape:</span>
+                        </span>
+                        <span className="font-medium text-slate-800">
+                          {autoReelBundle.soundscapeSummary}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="font-semibold text-[var(--whisk-navy)]">Editorial Cut:</span>
+                        {autoReelBundle.format.compositeMode === 'soundscape-pass' ? (
+                          <span className="font-semibold text-[#D94E34]">
+                            Standalone Whisk Boarding Pass ({spec.originCode} → {spec.destCode}) floating over blurred {spec.destLabel} lights + stereo trip audio ({videoDuration})
+                          </span>
+                        ) : (
+                          <>
+                            <span className="font-medium text-slate-800">
+                              Single-take 35mm film of {autoReelBundle.featuredSpot.name} ({videoDuration}, zero AI text)
+                            </span>
+                            <span className="text-slate-400">→</span>
+                            <span className="font-semibold text-[#D94E34]">
+                              {autoAttachBoardingPassOutro
+                                ? `0.85s cross-dissolve → Crisp Whisk Boarding Pass (${spec.originCode} → ${spec.destCode})`
+                                : `Raw text-free cinema clip`}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Automation & Studio Finisher Toggles */}
+                    <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center gap-x-5 gap-y-2">
+                      <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={autoRotateFormat}
+                          onChange={(e) => setAutoRotateFormat(e.target.checked)}
+                          className="rounded border-slate-300 text-[var(--whisk-navy)]"
+                        />
+                        <span>Auto-advance pillar after render</span>
+                      </label>
+                      <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={autoRotateSource}
+                          onChange={(e) => setAutoRotateSource(e.target.checked)}
+                          className="rounded border-slate-300 text-[var(--whisk-navy)]"
+                        />
+                        <span>Also rotate destination</span>
+                      </label>
+                      {autoReelBundle.format.compositeMode === 'cinema-outro' && (
+                        <>
+                          <label
+                            className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer"
+                            title="Films clean, text-free luxury cinema footage with destination audio and seamlessly cross-dissolves into your exact vector-sharp Whisk Boarding Pass PNG end-card."
+                          >
+                            <input
+                              type="checkbox"
+                              checked={autoAttachBoardingPassOutro}
+                              onChange={(e) => setAutoAttachBoardingPassOutro(e.target.checked)}
+                              className="rounded border-slate-300 text-[#D94E34]"
+                            />
+                            <span className="inline-flex items-center gap-1">
+                              <Layers className="w-3.5 h-3.5 text-[#D94E34]" />
+                              <span>Studio Boarding Pass Outro (Crisp Vector)</span>
+                            </span>
+                          </label>
+                          {autoAttachBoardingPassOutro && (
+                            <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={showEditorialLowerThird}
+                                onChange={(e) => setShowEditorialLowerThird(e.target.checked)}
+                                className="rounded border-slate-300 text-[var(--whisk-navy)]"
+                              />
+                              <span>Subtle serif spot title</span>
+                            </label>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {videoMode === 'animate' && (
+                    <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-slate-700">
+                          Starting Polaroid or Frame Image
+                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const matchName = pickDestinationPolaroidNames(spec.destLabel, 1)[0];
+                              const matched = LANDMARK_POLAROIDS.find((p) => p.name === matchName);
+                              if (matched) {
+                                setVideoSourceImageUrl(await imageUrlToDataUrl(matched.url));
+                              }
+                            }}
+                            className="h-8 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-[var(--whisk-navy)] inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Camera className="w-3.5 h-3.5 text-[#D94E34]" />
+                            <span>Use {spec.destLabel} Polaroid</span>
+                          </button>
+                          {passPreviewUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setVideoSourceImageUrl(passPreviewUrl)}
+                              className="h-8 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer"
+                            >
+                              Use Boarding Pass
+                            </button>
+                          )}
+                          {generatedImageUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setVideoSourceImageUrl(generatedImageUrl)}
+                              className="h-8 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer"
+                            >
+                              Use Nano Banana Image
+                            </button>
+                          )}
+                          <label className="h-8 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 cursor-pointer">
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>Upload Photo</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                setVideoSourceImageUrl(await readFileAsDataUrl(file));
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Quick Whisk Polaroid Swatch Strip */}
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                        {LANDMARK_POLAROIDS.slice(0, 12).map((p) => (
+                          <button
+                            key={p.name}
+                            type="button"
+                            onClick={async () => setVideoSourceImageUrl(await imageUrlToDataUrl(p.url))}
+                            className="shrink-0 w-14 rounded-lg border border-slate-200 bg-white p-1 hover:border-[#D94E34] transition-colors cursor-pointer"
+                            title={`Animate ${p.name} Polaroid`}
+                          >
+                            <img
+                              src={p.url}
+                              alt={p.name}
+                              className="w-full h-11 object-cover rounded"
+                            />
+                            <div className="text-[9px] font-semibold text-slate-700 truncate mt-0.5 text-center">
+                              {p.name.split(',')[0]}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+
+                      {videoSourceImageUrl ? (
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={videoSourceImageUrl}
+                            alt="Starting frame for video animation"
+                            className="w-20 h-28 object-cover rounded-lg border border-slate-200 bg-white"
+                          />
+                          <div className="text-xs text-slate-600 space-y-1">
+                            <div className="font-semibold text-[var(--whisk-navy)]">
+                              Starting frame ready for Living Polaroid animation
+                            </div>
+                            <p>
+                              Omni 1.2 Flash will gently bring this frame to life with stereo destination audio, then dissolve into your crisp Boarding Pass.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setVideoSourceImageUrl(null)}
+                              className="text-rose-600 font-semibold hover:underline cursor-pointer"
+                            >
+                              Remove frame
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500">
+                          Pick any Whisk Polaroid above or upload a destination photo to animate it into a luxury Reel with real trip sound.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-semibold text-slate-700">
+                        {autoReelBundle.format.compositeMode === 'soundscape-pass'
+                          ? 'Ambient Lights & Live Trip Soundscape Prompt (Boarding Pass Floats Cleanly on Top)'
+                          : 'Director Cinematography & Soundscape Prompt (Single-Take 35mm · Boarding Pass Composited Cleanly After)'}
+                      </label>
+                      {reelPromptEditedManually && (
+                        <button
+                          type="button"
+                          onClick={() => setReelPromptEditedManually(false)}
+                          className="text-[11px] font-semibold text-[#D94E34] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          <span>Rebuild from Spots</span>
+                        </button>
+                      )}
+                    </div>
+                    <textarea
+                      rows={5}
+                      value={videoPrompt}
+                      onChange={(e) => {
+                        setVideoPrompt(e.target.value);
+                        setReelPromptEditedManually(true);
+                      }}
+                      placeholder="Describe the atmosphere, bokeh lights, and authentic local soundscape (horns, market chatter, café clinking)..."
+                      className="w-full p-3.5 rounded-xl border border-slate-300 text-xs leading-relaxed"
+                    />
+                  </div>
+
+                  <div className="grid sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Aspect Ratio
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(['9:16', '16:9'] as MarketingVideoAspect[]).map((ar) => (
+                          <button
+                            key={ar}
+                            type="button"
+                            onClick={() => setVideoAspect(ar)}
+                            className={`h-9 rounded-lg border text-xs font-semibold tabular-nums cursor-pointer ${
+                              videoAspect === ar
+                                ? 'bg-[var(--whisk-navy)] text-white border-[var(--whisk-navy)]'
+                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            {ar}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Duration
+                      </label>
+                      <select
+                        value={videoDuration}
+                        onChange={(e) => setVideoDuration(e.target.value as MarketingVideoDuration)}
+                        className="w-full h-9 px-3 rounded-lg border border-slate-300 bg-white text-xs font-semibold tabular-nums"
+                      >
+                        {(['5s', '6s', '8s', '10s', '12s', '15s'] as MarketingVideoDuration[]).map((d) => (
+                          <option key={d} value={d}>
+                            {d} clip
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Resolution
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(['720p', '1080p'] as MarketingVideoResolution[]).map((resOpt) => (
+                          <button
+                            key={resOpt}
+                            type="button"
+                            onClick={() => setVideoResolution(resOpt)}
+                            className={`h-9 rounded-lg border text-xs font-semibold tabular-nums cursor-pointer ${
+                              videoResolution === resOpt
+                                ? 'bg-[var(--whisk-navy)] text-white border-[var(--whisk-navy)]'
+                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            {resOpt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={generatingVideo}
+                      onClick={() => handleRunVideoStudio(false)}
+                      className="h-10 px-5 rounded-xl bg-[#D94E34] hover:bg-[#c54229] text-white text-xs font-semibold inline-flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                    >
+                      {generatingVideo ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : autoReelBundle.format.compositeMode === 'soundscape-pass' ? (
+                        <Volume2 className="w-4 h-4" />
+                      ) : (
+                        <Film className="w-4 h-4" />
+                      )}
+                      <span>
+                        {generatingVideo
+                          ? videoProgressLabel || 'Filming luxury Reel...'
+                          : autoReelBundle.format.compositeMode === 'soundscape-pass'
+                          ? `Render Boarding Pass + ${spec.destLabel} Sounds`
+                          : videoMode === 'animate'
+                          ? `Animate Living Polaroid + Pass Outro`
+                          : `Film ${autoReelBundle.format.shortLabel} + Pass Outro`}
+                      </span>
+                    </button>
+
+                    {rawFootageUrl && autoReelBundle.format.compositeMode !== 'direct' && (
+                      <button
+                        type="button"
+                        disabled={generatingVideo}
+                        onClick={handleRecompositeOutro}
+                        className="h-10 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-[var(--whisk-navy)] inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Layers className="w-3.5 h-3.5 text-[#D94E34]" />
+                        <span>
+                          {autoReelBundle.format.compositeMode === 'soundscape-pass'
+                            ? 'Re-Composite Pass + Sound'
+                            : 'Re-Composite Outro'}
+                        </span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => copyText(autoReelBundle.suggestedCaption, 'reel-caption')}
+                      className="h-10 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {copiedId === 'reel-caption' ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5 text-slate-500" />
+                      )}
+                      <span>{copiedId === 'reel-caption' ? 'Caption Copied' : 'Copy Post Caption'}</span>
+                    </button>
+                  </div>
+
+                  {/* Multi-Turn Video Refinement / Extension via previous_interaction_id */}
+                  {videoInteractionId && (
+                    <div className="pt-4 border-t border-slate-200 space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label className="text-xs font-semibold text-slate-700">
+                          Refine Footage & Soundscape (Multi-Turn Omni Flash)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setVideoFollowUpPrompt(
+                              'Bring out warmer street lights and richer background sounds of the local market: light conversation, distant horns, espresso cups clinking, slower camera drift.'
+                            )
+                          }
+                          className="text-[11px] font-semibold text-[#D94E34] hover:underline cursor-pointer"
+                        >
+                          Richer Lights & Market Chatter →
+                        </button>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="text"
+                          value={videoFollowUpPrompt}
+                          onChange={(e) => setVideoFollowUpPrompt(e.target.value)}
+                          placeholder="e.g. Add warmer lantern bokeh and livelier evening market chatter"
+                          className="flex-1 h-9 px-3 rounded-lg border border-slate-300 text-xs"
+                        />
+                        <button
+                          type="button"
+                          disabled={generatingVideo || !videoFollowUpPrompt.trim()}
+                          onClick={() => handleRunVideoStudio(true)}
+                          className="h-9 px-4 rounded-lg bg-[var(--whisk-navy)] hover:bg-slate-800 text-white text-xs font-semibold whitespace-nowrap cursor-pointer disabled:opacity-50"
+                        >
+                          Refine Footage
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
-            {generatedVideoUrl && (
-              <a
-                href={generatedVideoUrl}
-                download={`whisk-reel-${spec.destCode.toLowerCase()}-${videoAspect.replace(':', 'x')}.mp4`}
-                className="w-full h-10 px-4 rounded-xl bg-[var(--whisk-navy)] hover:bg-slate-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-2"
-              >
-                <Download className="w-4 h-4" />
-                <span>Download MP4 for Instagram & TikTok</span>
-              </a>
-            )}
+            {/* Video Preview, Caption & Download Panel */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-bold text-[var(--whisk-navy)]">
+                  Finished Luxury Reel ({videoAspect})
+                </div>
+                <span className="text-[11px] font-medium text-slate-500">
+                  {spec.destLabel} ·{' '}
+                  {videoMode === 'polaroids'
+                    ? `${selectedPolaroids.length} Polaroids`
+                    : autoReelBundle.format.shortLabel}
+                </span>
+              </div>
+
+              <div className="w-full min-h-[380px] rounded-xl border border-slate-200 bg-slate-950 flex items-center justify-center overflow-hidden">
+                {generatedVideoUrl ? (
+                  <video
+                    key={generatedVideoUrl}
+                    src={generatedVideoUrl}
+                    controls
+                    autoPlay
+                    loop
+                    playsInline
+                    className="w-full max-h-[520px] object-contain"
+                  />
+                ) : (
+                  <div className="text-center px-6 py-12 text-xs text-slate-400">
+                    {generatingVideo
+                      ? videoProgressLabel || 'Rendering luxury Reel & destination audio...'
+                      : 'Your finished Reel (Boarding Pass + live trip soundscape, animated Polaroids, or 35mm spot film) will play here with sound.'}
+                  </div>
+                )}
+              </div>
+
+              {generatedVideoUrl && (
+                <div className="space-y-2">
+                  <a
+                    href={generatedVideoUrl}
+                    download={`whisk-luxury-reel-${spec.destCode.toLowerCase()}-${reelFormatId}-${videoAspect.replace(':', 'x')}.${generatedFileExt}`}
+                    className="w-full h-10 px-4 rounded-xl bg-[var(--whisk-navy)] hover:bg-slate-800 text-white text-xs font-semibold inline-flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download Finished Reel ({generatedFileExt.toUpperCase()})</span>
+                  </a>
+                  {rawFootageUrl && rawFootageUrl !== generatedVideoUrl && (
+                    <a
+                      href={rawFootageUrl}
+                      download={`whisk-raw-cinema-${spec.destCode.toLowerCase()}-${reelFormatId}.mp4`}
+                      className="w-full h-9 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center justify-center gap-2"
+                    >
+                      <Download className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Download Raw Text-Free Footage (MP4)</span>
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Ready-to-Post Synced Caption Preview */}
+              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-[var(--whisk-navy)]">
+                    Paired @whisk.travel Caption
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => copyText(autoReelBundle.suggestedCaption, 'reel-caption-card')}
+                    className="text-[11px] font-semibold text-slate-600 hover:text-[var(--whisk-navy)] inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    {copiedId === 'reel-caption-card' ? (
+                      <Check className="w-3 h-3 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                    <span>{copiedId === 'reel-caption-card' ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-600 whitespace-pre-line leading-relaxed">
+                  {autoReelBundle.suggestedCaption}
+                </p>
+              </div>
+            </div>
           </div>
+
+          {/* Session Reel Queue (Preserves Every Rotated Reel Generated This Session) */}
+          {reelLibrary.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-[var(--whisk-navy)]">
+                    Session Reel Queue ({reelLibrary.length})
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Every rotated Reel generated in this session stays ready for playback, caption copy, and MP4 download.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
+                {reelLibrary.map((item) => {
+                  const isCurrent = generatedVideoUrl === item.videoUrl;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`p-3.5 rounded-xl border transition-colors space-y-2.5 ${
+                        isCurrent
+                          ? 'border-[var(--whisk-navy)] bg-slate-50'
+                          : 'border-slate-200 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-bold text-[var(--whisk-navy)]">
+                            {item.destination} · {item.duration}
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            {item.formatTitle} · {item.createdAt}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setGeneratedVideoUrl(item.videoUrl);
+                            setRawFootageUrl(item.rawFootageUrl);
+                            setGeneratedFileExt(item.fileExtension);
+                            setVideoInteractionId(item.interactionId);
+                          }}
+                          className="h-7 px-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-[11px] font-semibold text-[var(--whisk-navy)] inline-flex items-center gap-1 cursor-pointer shrink-0"
+                        >
+                          <Play className="w-3 h-3" />
+                          <span>Preview</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={item.videoUrl}
+                          download={`whisk-luxury-reel-${item.destCode.toLowerCase()}-${item.formatId}.${item.fileExtension}`}
+                          className="flex-1 h-8 px-3 rounded-lg bg-[var(--whisk-navy)] hover:bg-slate-800 text-white text-[11px] font-semibold inline-flex items-center justify-center gap-1.5"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download {item.fileExtension.toUpperCase()}</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => copyText(item.caption, `queue-${item.id}`)}
+                          className="h-8 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          {copiedId === `queue-${item.id}` ? (
+                            <Check className="w-3 h-3 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                          <span>{copiedId === `queue-${item.id}` ? 'Copied' : 'Caption'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1618,7 +2650,7 @@ export const AdminMarketingStudio: React.FC<AdminMarketingStudioProps> = ({
               <button
                 type="button"
                 disabled={researchingTrends}
-                onClick={handleResearchTrendsAndMaps}
+                onClick={() => handleResearchTrendsAndMaps(false)}
                 className="h-9 px-4 rounded-xl bg-[var(--whisk-navy)] hover:bg-slate-800 text-white text-xs font-semibold inline-flex items-center gap-2 cursor-pointer disabled:opacity-60"
               >
                 {researchingTrends ? (
